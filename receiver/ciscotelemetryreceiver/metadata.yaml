@@ -1,0 +1,109 @@
+# metadata.yaml for Cisco Telemetry Receiver
+# OpenTelemetry Collector component metadata
+
+type: ciscotelemetry
+scope_name: github.com/open-telemetry/opentelemetry-collector-contrib/receiver/ciscotelemetryreceiver
+
+status:
+  class: receiver
+  stability:
+    development: [metrics]
+  distributions: []  # Will be added to contrib after alpha graduation
+  codeowners:
+    active: [jcohoe]  # Need to add sponsor when found
+    emeritus: []
+
+# Component description
+description: >-
+  Cisco Telemetry receiver can receive telemetry data from Cisco IOS XE devices 
+  via gRPC dial-out with kvGPB (key-value GPB) encoding. It includes an RFC 6020/7950 
+  compliant YANG parser for dynamic schema discovery and semantic type classification.
+
+# Supported platforms
+supported_platforms: [linux, windows, darwin]
+
+resource_attributes:
+  cisco.node_id:
+    description: Cisco device node identifier from telemetry message
+    type: string
+    enabled: true
+  cisco.subscription_id: 
+    description: Cisco telemetry subscription identifier
+    type: string
+    enabled: true
+  cisco.encoding_path:
+    description: YANG model path for the telemetry data
+    type: string
+    enabled: true
+  cisco.yang_module:
+    description: Discovered YANG module name
+    type: string
+    enabled: true
+  cisco.device_type:
+    description: Cisco device type (e.g., "IOS-XE", "NX-OS", "IOS-XR")
+    type: string
+    enabled: true
+
+# Internal telemetry metrics for component observability
+telemetry:
+  metrics:
+    cisco_telemetry_receiver_messages_received:
+      enabled: true
+      description: Number of telemetry messages received
+      unit: "1"
+      gauge:
+        value_type: int
+        monotonic: true
+    cisco_telemetry_receiver_messages_processed:
+      enabled: true  
+      description: Number of telemetry messages successfully processed
+      unit: "1"
+      gauge:
+        value_type: int
+        monotonic: true
+    cisco_telemetry_receiver_messages_dropped:
+      enabled: true
+      description: Number of telemetry messages dropped due to errors
+      unit: "1"
+      gauge:
+        value_type: int
+        monotonic: true
+    cisco_telemetry_receiver_bytes_received:
+      enabled: true
+      description: Total bytes received from telemetry connections
+      unit: "By"
+      gauge:
+        value_type: int
+        monotonic: true
+    cisco_telemetry_receiver_connections_active:
+      enabled: true
+      description: Number of active gRPC connections
+      unit: "1"
+      gauge:
+        value_type: int
+    cisco_telemetry_receiver_yang_modules_discovered:
+      enabled: true
+      description: Number of unique YANG modules discovered
+      unit: "1"
+      gauge:
+        value_type: int
+    cisco_telemetry_receiver_processing_duration:
+      enabled: true
+      description: Time spent processing telemetry messages
+      unit: "ms"
+      histogram:
+        bucket_boundaries: [0.1, 0.5, 1.0, 5.0, 10.0, 50.0, 100.0, 500.0, 1000.0]
+    cisco_telemetry_receiver_grpc_errors:
+      enabled: true
+      description: Number of gRPC errors encountered
+      unit: "1"
+      gauge:
+        value_type: int
+        monotonic: true
+
+# Tests configuration for CI/CD
+tests:
+  # Skip tests that require external dependencies
+  skip_lifecycle: false
+  skip_shutdown: false
+  config_sources: ["file"]

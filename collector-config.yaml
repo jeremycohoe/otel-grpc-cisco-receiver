@@ -1,0 +1,47 @@
+# OpenTelemetry Collector Configuration for Cisco Telemetry
+# This configuration receives Cisco telemetry and exports to multiple destinations
+
+receivers:
+  # Your custom Cisco telemetry receiver
+  cisco_telemetry:
+    listen_address: "0.0.0.0:57500"
+    tls_enabled: false
+    keep_alive_timeout: 60s
+    max_message_size: 4194304  # 4MB
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+
+exporters:
+  # Debug exporter (prints to console)
+  debug:
+    verbosity: detailed
+    
+  # Splunk HEC exporter (replace with your Splunk details)
+  splunk_hec:
+    endpoint: "https://your-splunk-instance:8088/services/collector"
+    token: "your-hec-token"
+    source: "cisco:telemetry"
+    sourcetype: "cisco:mdt"
+    
+  # OTLP exporter (for other OTEL-compatible systems)
+  otlp:
+    endpoint: "http://localhost:4317"
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    metrics:
+      receivers: [cisco_telemetry]
+      processors: [batch]
+      exporters: [debug, splunk_hec]  # Add/remove exporters as needed
+      
+  # Optional: Enable telemetry for the collector itself
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      address: localhost:8888

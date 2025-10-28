@@ -1,0 +1,19 @@
+dist:
+  name: cisco-otelcol
+  description: OpenTelemetry Collector with Cisco Telemetry Receiver
+  output_path: ./custom-collector
+  version: 1.0.0
+
+exporters:
+  - gomod: go.opentelemetry.io/collector/exporter/debugexporter v0.118.0
+  - gomod: go.opentelemetry.io/collector/exporter/otlpexporter v0.118.0
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/exporter/splunkhecexporter v0.118.0
+
+processors:
+  - gomod: go.opentelemetry.io/collector/processor/batchprocessor v0.118.0
+
+receivers:
+  - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.118.0
+  - name: ciscotelemetryreceiver
+    gomod: github.com/jcohoe/otel-grpc-cisco-receiver v0.1.0
+    path: ./receiver/ciscotelemetryreceiver

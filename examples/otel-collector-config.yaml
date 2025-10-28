@@ -1,0 +1,40 @@
+# OpenTelemetry Collector Configuration with Cisco Telemetry Receiver
+# This example shows how to configure the collector to receive telemetry from Cisco IOS XE switches
+
+receivers:
+  cisco_telemetry:
+    listen_address: "0.0.0.0:57500"
+    tls_enabled: false
+    # For TLS/mTLS configuration:
+    # tls_enabled: true
+    # tls_cert_file: "/path/to/server.crt"
+    # tls_key_file: "/path/to/server.key"
+    # tls_client_ca_file: "/path/to/ca.crt"  # For mTLS
+    keep_alive_timeout: 60s
+    max_message_size: 4194304  # 4MB
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+
+exporters:
+  # Example: Export to Splunk HEC
+  splunk_hec:
+    endpoint: "https://your-splunk-instance:8088/services/collector"
+    token: "your-hec-token"
+    
+  # Example: Export to OTLP (e.g., Jaeger, etc.)
+  otlp:
+    endpoint: "http://localhost:4317"
+    
+  # For debugging
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    metrics:
+      receivers: [cisco_telemetry]
+      processors: [batch]
+      exporters: [splunk_hec, debug]

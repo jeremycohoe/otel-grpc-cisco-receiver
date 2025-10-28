@@ -1,0 +1,35 @@
+# Cisco IOS XE Telemetry Configuration Example
+# This shows how to configure a Cisco switch to send telemetry to the OTEL collector
+
+# Configure telemetry subscription on Cisco switch
+telemetry ietf subscription 101
+ encoding encode-kvgpb
+ filter xpath /process-cpu-ios-xe-oper:cpu-usage/cpu-utilization
+ source-address 192.168.1.10
+ stream yang-push
+ update-policy periodic 30000
+ receiver ip address 192.168.1.100 57500 protocol grpc-tcp
+
+# Interface statistics example
+telemetry ietf subscription 102
+ encoding encode-kvgpb  
+ filter xpath /interfaces-ios-xe-oper:interfaces/interface/statistics
+ source-address 192.168.1.10
+ stream yang-push
+ update-policy periodic 10000
+ receiver ip address 192.168.1.100 57500 protocol grpc-tcp
+
+# Memory usage example  
+telemetry ietf subscription 103
+ encoding encode-kvgpb
+ filter xpath /memory-ios-xe-oper:memory-statistics/memory-statistic
+ source-address 192.168.1.10
+ stream yang-push
+ update-policy periodic 30000
+ receiver ip address 192.168.1.100 57500 protocol grpc-tcp
+
+# Notes:
+# - 192.168.1.10 is the source IP of the switch
+# - 192.168.1.100:57500 is where your OTEL collector is running
+# - Update intervals are in milliseconds (10000 = 10 seconds, 30000 = 30 seconds)
+# - encode-kvgpb is the kvGPB encoding format that this receiver handles
