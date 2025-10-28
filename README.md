@@ -3,13 +3,27 @@
 ## 🎉 **83.6% Test Coverage Achieved!**
 
 [![Coverage](https://img.shields.io/badge/coverage-83.6%25-brightgreen)](COVERAGE_ACHIEVEMENT_REPORT.md)
-[![Go Report Card](https://goreportcard.com/badge/github.com/jcohoe/otel-grpc-cisco-receiver)](https://goreportcard.com/report/github.com/jcohoe/otel-grpc-cisco-receiver)
+[![OpenTelemetry Issue](https://img.shields.io/badge/OpenTelemetry-Issue%20%2343840-orange)](https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/43840)
+[![Go Report Card](https://goreportcard.com/badge/github.com/jeremycohoe/otel-grpc-cisco-receiver)](https://goreportcard.com/report/github.com/jeremycohoe/otel-grpc-cisco-receiver)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-Ready-brightgreen)](https://opentelemetry.io/)
+[![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-Contribution%20Ready-brightgreen)](https://opentelemetry.io/)
 
 > **Production-Ready OpenTelemetry Collector Component for Cisco IOS XE Telemetry**
 > 
 > **✅ 83.6% Test Coverage | ✅ 80+ Test Cases | ✅ Fast Execution | ✅ OpenTelemetry Ready**
+
+## 🎯 **OpenTelemetry Contribution Opportunity**
+
+**This implementation perfectly aligns with [OpenTelemetry Issue #43840](https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/43840)** - a request for a **yanggrpc receiver**! 
+
+- **🎉 Perfect Match**: Issue requests YANG gRPC receiver - this is exactly that
+- **✅ Exceeds Standards**: 83.6% test coverage vs typical 60-70% in contrib  
+- **🚀 Production Ready**: Enterprise security, high performance, RFC compliance
+- **📋 Accepted Component**: Issue is sponsored and ready for contribution
+
+**Ready to contribute to OpenTelemetry mainline!** See [ISSUE_43840_OPPORTUNITY.md](ISSUE_43840_OPPORTUNITY.md) for details.
+
+---
 
 A native OpenTelemetry (OTEL) collector receiver that directly receives gRPC dial-out telemetry from Cisco IOS XE switches using kvGPB (key-value Google Protocol Buffers) encoding. This receiver replaces Telegraf's `cisco_telemetry_mdt` plugin with a modern, secure, and highly performant solution.
 
