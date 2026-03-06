@@ -12,6 +12,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -25,8 +26,11 @@ type grpcService struct {
 
 // MdtDialout handles the bidirectional streaming gRPC call from Cisco devices
 func (s *grpcService) MdtDialout(stream grpc.BidiStreamingServer[pb.MdtDialoutArgs, pb.MdtDialoutArgs]) error {
-	ctx := context.Background()
-	clientAddr := "unknown" // TODO: Extract from stream context
+	ctx := stream.Context()
+	clientAddr := "unknown"
+	if p, ok := peer.FromContext(ctx); ok && p.Addr != nil {
+		clientAddr = p.Addr.String()
+	}
 
 	s.receiver.telemetryBuilder.RecordConnectionOpened(ctx, clientAddr)
 	defer s.receiver.telemetryBuilder.RecordConnectionClosed(ctx, clientAddr)
@@ -146,18 +150,16 @@ func (s *grpcService) extractYANGModule(encodingPath string) string {
 
 // convertToOTELMetrics converts Cisco telemetry data to OpenTelemetry metrics format
 func (s *grpcService) convertToOTELMetrics(telemetry *pb.Telemetry) pmetric.Metrics {
-	// RFC YANG Parser analysis for this encoding path
+	// Use RFC YANG parser analysis for this encoding path to enrich
+	// resource attributes with module and type information.
 	if s.rfcYangParser != nil {
 		rfcAnalysis := s.rfcYangParser.AnalyzeTelemetryPath(telemetry.EncodingPath)
 		if rfcAnalysis != nil && rfcAnalysis.IsValid {
-			fmt.Printf("\n=== RFC YANG ANALYSIS ===\n")
-			fmt.Printf("Encoding Path: %s\n", telemetry.EncodingPath)
-			fmt.Printf("Module: %s\n", rfcAnalysis.ModuleName)
-			fmt.Printf("XPath: %s\n", rfcAnalysis.XPath)
-			fmt.Printf("List Path: %s\n", rfcAnalysis.ListPath)
-			fmt.Printf("Semantic Type: %s\n", rfcAnalysis.SemanticType)
-			fmt.Printf("List Keys: %v\n", rfcAnalysis.ListKeys)
-			fmt.Printf("=========================\n\n")
+			s.receiver.settings.Logger.Debug("RFC YANG analysis",
+				zap.String("encoding_path", telemetry.EncodingPath),
+				zap.String("module", rfcAnalysis.ModuleName),
+				zap.String("xpath", rfcAnalysis.XPath),
+				zap.String("semantic_type", rfcAnalysis.SemanticType))
 		}
 	}
 
@@ -178,8 +180,8 @@ func (s *grpcService) convertToOTELMetrics(telemetry *pb.Telemetry) pmetric.Metr
 
 	scopeMetrics := resourceMetrics.ScopeMetrics().AppendEmpty()
 	scope := scopeMetrics.Scope()
-	scope.SetName("cisco_telemetry_receiver")
-	scope.SetVersion("1.0.0")
+	scope.SetName("github.com/jcohoe/otel-grpc-cisco-receiver")
+	scope.SetVersion("0.1.0")
 
 	// Process kvGPB data if present
 	if len(telemetry.DataGpbkv) > 0 {
@@ -253,67 +255,6 @@ func (s *grpcService) processField(scopeMetrics pmetric.ScopeMetrics, field *pb.
 	}
 }
 
-// createGaugeMetric creates a gauge metric with numeric value
-func (s *grpcService) createGaugeMetric(metric pmetric.Metric, name, encodingPath string, value float64, timestamp pcommon.Timestamp) {
-	metric.SetName(fmt.Sprintf("cisco.%s", name))
-	metric.SetDescription(fmt.Sprintf("Cisco telemetry metric from %s", encodingPath))
-	metric.SetUnit("1")
-
-	gauge := metric.SetEmptyGauge()
-	dp := gauge.DataPoints().AppendEmpty()
-	dp.SetDoubleValue(value)
-	dp.SetTimestamp(timestamp)
-
-	// Add encoding path as attribute
-	dp.Attributes().PutStr("encoding_path", encodingPath)
-
-	// Add YANG-derived attributes
-	analysis := s.yangParser.AnalyzeEncodingPath(encodingPath)
-	if analysis != nil && analysis.ModuleName != "" {
-		dp.Attributes().PutStr("yang.module", analysis.ModuleName)
-		dp.Attributes().PutStr("yang.list_path", analysis.ListPath)
-
-		// Mark if this is a key field
-		fieldName := s.extractFieldName(name)
-		if s.isKeyField(fieldName, analysis) {
-			dp.Attributes().PutStr("yang.is_key", "true")
-			dp.Attributes().PutStr("yang.key_type", fieldName)
-		}
-	}
-}
-
-// createInfoMetric creates an info metric for string values
-func (s *grpcService) createInfoMetric(metric pmetric.Metric, name, encodingPath, value string, timestamp pcommon.Timestamp) {
-	metric.SetName(fmt.Sprintf("cisco.%s_info", name))
-	metric.SetDescription(fmt.Sprintf("Cisco telemetry info metric from %s", encodingPath))
-	metric.SetUnit("1")
-
-	gauge := metric.SetEmptyGauge()
-	dp := gauge.DataPoints().AppendEmpty()
-	dp.SetDoubleValue(1.0) // Info metrics always have value 1
-	dp.SetTimestamp(timestamp)
-
-	// Add the string value and encoding path as attributes
-	dp.Attributes().PutStr("value", value)
-	dp.Attributes().PutStr("encoding_path", encodingPath)
-
-	// Add YANG-derived attributes
-	analysis := s.yangParser.AnalyzeEncodingPath(encodingPath)
-	if analysis != nil && analysis.ModuleName != "" {
-		dp.Attributes().PutStr("yang.module", analysis.ModuleName)
-		dp.Attributes().PutStr("yang.list_path", analysis.ListPath)
-
-		// Check if this is a key field (very likely for string values)
-		fieldName := s.extractFieldName(name)
-		if s.isKeyField(fieldName, analysis) {
-			dp.Attributes().PutStr("yang.is_key", "true")
-			dp.Attributes().PutStr("yang.key_type", fieldName)
-			// For key fields, also add the key value as a special attribute
-			dp.Attributes().PutStr("yang.key_value", value)
-		}
-	}
-}
-
 // processGPBTableData processes GPB table formatted telemetry data
 func (s *grpcService) processGPBTableData(scopeMetrics pmetric.ScopeMetrics, telemetry *pb.Telemetry) {
 	// For GPB table data, we would need specific protobuf definitions for each encoding path
@@ -344,23 +285,6 @@ func (s *grpcService) isKeyField(fieldName string, analysis *PathAnalysis) bool 
 	}
 
 	return false
-}
-
-// enhanceMetricWithYANGInfo enhances a metric with YANG-derived information
-func (s *grpcService) enhanceMetricWithYANGInfo(metric pmetric.Metric, fieldName string, analysis *PathAnalysis, encodingPath string) {
-	if analysis == nil {
-		return
-	}
-
-	// Add YANG module information as metric attributes
-	if analysis.ModuleName != "" {
-		// This would need to be added to the metric attributes
-		s.receiver.settings.Logger.Debug("Enhanced metric with YANG info",
-			zap.String("field", fieldName),
-			zap.String("module", analysis.ModuleName),
-			zap.String("list_path", analysis.ListPath),
-			zap.Any("keys", analysis.Keys))
-	}
 }
 
 // extractFieldName extracts the field name from a metric name path
@@ -465,7 +389,10 @@ func (s *grpcService) addYANGAttributes(attrs pcommon.Map, encodingPath string, 
 	attrs.PutStr("encoding_path", encodingPath)
 
 	// Use RFC-compliant YANG parser for enhanced analysis
-	rfcAnalysis := s.rfcYangParser.AnalyzeTelemetryPath(encodingPath)
+	var rfcAnalysis *RFC6020TelemetryAnalysis
+	if s.rfcYangParser != nil {
+		rfcAnalysis = s.rfcYangParser.AnalyzeTelemetryPath(encodingPath)
+	}
 	if rfcAnalysis != nil && rfcAnalysis.IsValid {
 		if rfcAnalysis.ModuleName != "" {
 			attrs.PutStr("yang.module", rfcAnalysis.ModuleName)
@@ -490,7 +417,7 @@ func (s *grpcService) addYANGAttributes(attrs pcommon.Map, encodingPath string, 
 		}
 
 		// Add inferred data type from RFC parser
-		if len(rfcAnalysis.PathSegments) > 0 {
+		if s.rfcYangParser != nil && len(rfcAnalysis.PathSegments) > 0 {
 			leafName := rfcAnalysis.PathSegments[len(rfcAnalysis.PathSegments)-1]
 			inferredType := s.rfcYangParser.InferDataTypeFromPath(leafName)
 			if inferredType != nil && inferredType.Name != "" {

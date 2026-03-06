@@ -1,13 +1,24 @@
-# OpenTelemetry Collector Configuration for Cisco Telemetry
-# This configuration receives Cisco telemetry and exports to multiple destinations
+# OpenTelemetry Collector Configuration for Cisco IOS XE MDT Telemetry
+# This configuration receives Cisco gRPC dial-out telemetry and exports
+# to Splunk HEC, debug console, and OTLP endpoints.
 
 receivers:
-  # Your custom Cisco telemetry receiver
   cisco_telemetry:
     listen_address: "0.0.0.0:57500"
-    tls_enabled: false
-    keep_alive_timeout: 60s
-    max_message_size: 4194304  # 4MB
+    max_recv_msg_size_mib: 4
+    max_concurrent_streams: 100
+    keepalive:
+      time: 30s
+      timeout: 10s
+    yang:
+      enable_rfc_parser: true
+      cache_modules: true
+      max_modules: 1000
+    # Uncomment for mTLS (recommended for production):
+    # tls:
+    #   cert_file: /etc/otel/certs/server.crt
+    #   key_file:  /etc/otel/certs/server.key
+    #   client_ca_file: /etc/otel/certs/ca.crt
 
 processors:
   batch:
@@ -15,31 +26,30 @@ processors:
     send_batch_size: 1024
 
 exporters:
-  # Debug exporter (prints to console)
   debug:
     verbosity: detailed
-    
-  # Splunk HEC exporter (replace with your Splunk details)
-  splunk_hec:
-    endpoint: "https://your-splunk-instance:8088/services/collector"
-    token: "your-hec-token"
-    source: "cisco:telemetry"
-    sourcetype: "cisco:mdt"
-    
-  # OTLP exporter (for other OTEL-compatible systems)
-  otlp:
-    endpoint: "http://localhost:4317"
-    tls:
-      insecure: true
+
+  # Splunk HEC exporter – replace with your Splunk details
+  # splunk_hec:
+  #   endpoint: "https://your-splunk-instance:8088/services/collector"
+  #   token: "your-hec-token"
+  #   source: "cisco:mdt"
+  #   sourcetype: "cisco:mdt:grpc"
+  #   index: "cisco_metrics"
+
+  # OTLP exporter – for other OTel-compatible backends
+  # otlp:
+  #   endpoint: "http://localhost:4317"
+  #   tls:
+  #     insecure: true
 
 service:
   pipelines:
     metrics:
       receivers: [cisco_telemetry]
       processors: [batch]
-      exporters: [debug, splunk_hec]  # Add/remove exporters as needed
-      
-  # Optional: Enable telemetry for the collector itself
+      exporters: [debug]
+
   telemetry:
     logs:
       level: info

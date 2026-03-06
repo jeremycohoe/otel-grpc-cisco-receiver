@@ -1,0 +1,82 @@
+# Docker Compose for Cisco IOS XE MDT Telemetry → OTel Collector → Splunk HEC
+#
+# Usage:
+#   1. Build the custom collector:
+#        go install go.opentelemetry.io/collector/cmd/builder@v0.138.0
+#        builder --config=builder-config.yaml
+#   2. Start the stack:
+#        docker compose up -d
+#   3. Configure your Cisco switch(es) to dial-out to <host>:57500
+
+version: "3.9"
+
+services:
+  # ──────────────────────────────────────────────
+  # Custom OTel Collector with Cisco MDT receiver
+  # ──────────────────────────────────────────────
+  otel-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cisco-otel-collector
+    restart: unless-stopped
+    ports:
+      - "57500:57500"   # Cisco gRPC dial-out
+      - "8888:8888"     # Collector self-metrics (Prometheus)
+      - "13133:13133"   # Health check extension
+    volumes:
+      - ./docker-collector-config.yaml:/etc/otel/config.yaml:ro
+      # Mount certificates for mTLS (uncomment when using TLS):
+      # - ./certs:/etc/otel/certs:ro
+    environment:
+      # Override via env vars if needed:
+      # SPLUNK_HEC_ENDPOINT: "https://splunk:8088/services/collector"
+      # SPLUNK_HEC_TOKEN: "your-hec-token"
+      GOMAXPROCS: "2"
+    command: ["--config", "/etc/otel/config.yaml"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:13133/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      splunk:
+        condition: service_healthy
+    networks:
+      - telemetry
+
+  # ──────────────────────────────────────────────
+  # Splunk Enterprise (single-instance, dev mode)
+  # ──────────────────────────────────────────────
+  splunk:
+    image: splunk/splunk:latest
+    container_name: splunk
+    restart: unless-stopped
+    ports:
+      - "8000:8000"     # Splunk Web UI
+      - "8088:8088"     # HEC ingest
+      - "8089:8089"     # REST API
+    environment:
+      SPLUNK_START_ARGS: "--accept-license"
+      SPLUNK_PASSWORD: "changeme123"               # min 8 chars
+      SPLUNK_HEC_TOKEN: "cisco-mdt-token"          # pre-set HEC token
+      SPLUNK_APPS_URL: ""
+    volumes:
+      - splunk-var:/opt/splunk/var
+      - splunk-etc:/opt/splunk/etc
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8089/services/server/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+    networks:
+      - telemetry
+
+volumes:
+  splunk-var:
+  splunk-etc:
+
+networks:
+  telemetry:
+    driver: bridge

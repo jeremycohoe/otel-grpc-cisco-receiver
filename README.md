@@ -1,395 +1,237 @@
-# OpenTelemetry Cisco Telemetry Receiver
+# Cisco IOS XE MDT Telemetry Receiver for OpenTelemetry Collector
 
-## 🎉 **83.6% Test Coverage Achieved!**
+A native OpenTelemetry Collector receiver for **Cisco IOS XE Model-Driven Telemetry (MDT)** over **gRPC dial-out** with **kvGPB** encoding.
 
-[![Coverage](https://img.shields.io/badge/coverage-83.6%25-brightgreen)](COVERAGE_ACHIEVEMENT_REPORT.md)
-[![OpenTelemetry Issue](https://img.shields.io/badge/OpenTelemetry-Issue%20%2343840-orange)](https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/43840)
-[![Go Report Card](https://goreportcard.com/badge/github.com/jeremycohoe/otel-grpc-cisco-receiver)](https://goreportcard.com/report/github.com/jeremycohoe/otel-grpc-cisco-receiver)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-Contribution%20Ready-brightgreen)](https://opentelemetry.io/)
+This receiver replaces Telegraf's `cisco_telemetry_mdt` plugin with a first-class OTel component that can export to **any** backend supported by the OpenTelemetry Collector — Splunk HEC, Prometheus, Datadog, Grafana Mimir, OTLP, etc.
 
-> **Production-Ready OpenTelemetry Collector Component for Cisco IOS XE Telemetry**
-> 
-> **✅ 83.6% Test Coverage | ✅ 80+ Test Cases | ✅ Fast Execution | ✅ OpenTelemetry Ready**
+## Features
 
-## 🎯 **OpenTelemetry Contribution Opportunity**
-
-**This implementation perfectly aligns with [OpenTelemetry Issue #43840](https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/43840)** - a request for a **yanggrpc receiver**! 
-
-- **🎉 Perfect Match**: Issue requests YANG gRPC receiver - this is exactly that
-- **✅ Exceeds Standards**: 83.6% test coverage vs typical 60-70% in contrib  
-- **🚀 Production Ready**: Enterprise security, high performance, RFC compliance
-- **📋 Accepted Component**: Issue is sponsored and ready for contribution
-
-**Ready to contribute to OpenTelemetry mainline!** See [ISSUE_43840_OPPORTUNITY.md](ISSUE_43840_OPPORTUNITY.md) for details.
-
----
-
-A native OpenTelemetry (OTEL) collector receiver that directly receives gRPC dial-out telemetry from Cisco IOS XE switches using kvGPB (key-value Google Protocol Buffers) encoding. This receiver replaces Telegraf's `cisco_telemetry_mdt` plugin with a modern, secure, and highly performant solution.
-
-## Key Features
-
-### 🚀 **Performance & Quality**
-- **World-Class Testing**: 83.6% test coverage with 80+ comprehensive test cases
-- **High Performance**: >1000 messages/second throughput with optimized YANG processing
-- **Fast Test Execution**: Complete test suite runs in <5 seconds
-- **Production Ready**: Exceeds OpenTelemetry contribution standards
-
-### 🔒 **Enterprise Security**
-- **Full TLS Support**: TLS 1.2/1.3 with mTLS, cipher suite configuration
-- **Advanced Protection**: Rate limiting, IP allowlisting, and connection limits
-- **Security Validation**: 100% test coverage on all security components
-
-### 📊 **Native OTEL Integration**
-- **First-class OpenTelemetry**: Built for OTEL collector with native integration
-- **YANG Intelligence**: RFC 6020/7950 compliant parser with semantic type inference
-- **Real-time Monitoring**: 8 internal metrics tracking performance and data flow
-- **Flexible Configuration**: Support for legacy and modern configuration formats
-
-## Project Structure
-
-```
-├── receiver/
-│   └── ciscotelemetryreceiver/     # Main receiver implementation
-├── proto/                          # Protocol buffer definitions
-│   ├── mdt_grpc_dialout.proto     # Cisco gRPC dialout service
-│   ├── telemetry.proto            # Cisco telemetry message format
-│   └── generated/                  # Generated Go code (created by script)
-├── examples/                       # Configuration examples
-├── scripts/                        # Build and generation scripts
-└── cmd/                           # Command-line tools (future)
-```
+- **gRPC Dial-Out**: Cisco switch initiates the connection (`gRPCMdtDialout.MdtDialout` bidirectional streaming)
+- **kvGPB Decoding**: Decodes key-value Google Protocol Buffer telemetry payloads
+- **YANG Intelligence**: RFC 6020/7950 compliant parser + 4 built-in modules (CPU, interfaces, BGP, OSPF) for semantic type inference
+- **mTLS / TLS**: Standard OTel `configtls.ServerConfig` — cert files, client CA, min TLS version, reload interval
+- **Internal Observability**: 8 OTel SDK metrics (messages received, bytes, errors, active connections, processing time, YANG cache hits/misses, metrics produced)
+- **Backend Agnostic**: Works with any OTel Collector exporter
 
 ## Quick Start
 
-### 1. Generate Protocol Buffer Files
+### Prerequisites
+
+| Tool | Version |
+|------|---------|
+| Go | 1.23+ |
+| OTel Collector Builder (`builder`) | v0.138.0 |
+| Cisco IOS XE | 16.9+ |
+
+### 1. Build the Custom Collector
 
 ```bash
-./scripts/generate-proto.sh
-```
+# Install the OTel Collector Builder
+go install go.opentelemetry.io/collector/cmd/builder@v0.138.0
 
-### 2. Build Dependencies
-
-```bash
+# Clone and build
+git clone https://github.com/jcohoe/otel-grpc-cisco-receiver.git
+cd otel-grpc-cisco-receiver
 go mod tidy
+builder --config=builder-config.yaml
 ```
 
-### 3. Configure OpenTelemetry Collector
+The binary is written to `./build/cisco-otelcol`.
 
-## Quick Start
+### 2. Configure the Collector
 
-### Basic Setup
+Edit `collector-config.yaml` (or use the provided example):
 
 ```yaml
 receivers:
   cisco_telemetry:
     listen_address: "0.0.0.0:57500"
-    tls:
-      enabled: true
-      cert_file: "/path/to/server.crt"
-      key_file: "/path/to/server.key"
-      client_auth_type: "RequireAndVerifyClientCert"
-      ca_file: "/path/to/ca.crt"
-      min_version: "1.2"
-    security:
-      rate_limiting:
-        enabled: true
-        requests_per_second: 100.0
-        burst_size: 10
-      max_connections: 1000
-      allowed_clients: ["10.0.0.0/8", "192.168.0.0/16"]
+    max_recv_msg_size_mib: 4
+    max_concurrent_streams: 128
+    keepalive:
+      time: 30s
+      timeout: 10s
     yang:
       enable_rfc_parser: true
       cache_modules: true
+      max_modules: 1000
+    # Uncomment for mTLS:
+    # tls:
+    #   cert_file: /etc/otel/certs/server.crt
+    #   key_file:  /etc/otel/certs/server.key
+    #   client_ca_file: /etc/otel/certs/ca.crt
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+
+exporters:
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    metrics:
+      receivers: [cisco_telemetry]
+      processors: [batch]
+      exporters: [debug]
 ```
 
-### 2. Cisco Switch Configuration
+### 3. Run
+
+```bash
+./build/cisco-otelcol --config collector-config.yaml
+```
+
+### 4. Configure the Cisco Switch
 
 ```cisco
-telemetry ietf subscription 100
+telemetry ietf subscription 101
  encoding encode-kvgpb
- filter xpath /process-cpu-oper:cpu-usage/cpu-utilization/five-seconds
+ filter xpath /process-cpu-ios-xe-oper:cpu-usage/cpu-utilization
  source-address 10.1.1.1
  stream yang-push
- update-policy periodic 3000
+ update-policy periodic 30000
  receiver ip address 10.1.1.100 57500 protocol grpc-tcp
 ```
 
+Replace `10.1.1.100` with the host running the collector.
+
+## Docker Compose (with Splunk HEC)
+
+A full stack is provided: **Cisco switch → OTel Collector → Splunk Enterprise**.
+
+```bash
+docker compose up -d
+```
+
+This starts:
+- **otel-collector** on port 57500 (gRPC) and 8888 (self-metrics)
+- **Splunk Enterprise** on port 8000 (Web UI) and 8088 (HEC)
+
+Default Splunk credentials: `admin` / `changeme123`
+
+See [docker-compose.yaml](docker-compose.yaml) and [docker-collector-config.yaml](docker-collector-config.yaml).
+
 ## Configuration Reference
 
-See **[CONFIG.md](docs/CONFIG.md)** for comprehensive configuration documentation.
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `listen_address` | string | `0.0.0.0:57500` | Host:port for gRPC dial-out |
+| `max_recv_msg_size_mib` | int | `4` | Max inbound message size (MiB) |
+| `max_concurrent_streams` | uint32 | `128` | Max concurrent gRPC streams |
+| `keepalive.time` | duration | `30s` | Server-side keep-alive ping interval |
+| `keepalive.timeout` | duration | `10s` | Keep-alive response timeout |
+| `yang.enable_rfc_parser` | bool | `true` | Use RFC 6020/7950 YANG parser |
+| `yang.cache_modules` | bool | `true` | Cache parsed YANG modules |
+| `yang.max_modules` | int | `1000` | Max YANG modules to cache |
+| `tls` | configtls.ServerConfig | *nil* | Standard OTel TLS config (nil = plaintext) |
 
-## Testing & Quality
+### TLS / mTLS
 
-### 🎯 **World-Class Test Coverage: 83.6%**
+The receiver uses the standard OpenTelemetry `configtls.ServerConfig`:
 
-Our comprehensive testing approach ensures production-ready quality exceeding OpenTelemetry standards:
+```yaml
+tls:
+  cert_file: /path/to/server.crt
+  key_file: /path/to/server.key
+  client_ca_file: /path/to/ca.crt    # enables mutual TLS
+  min_version: "1.2"                  # optional, default: 1.2
+  reload_interval: 24h                # auto-reload certs
+```
+
+When `tls` is omitted (or null) the server runs plaintext — useful for lab environments.
+
+## Project Structure
+
+```
+├── receiver/ciscotelemetryreceiver/   # Core receiver implementation
+│   ├── config.go                      # Configuration types & validation
+│   ├── factory.go                     # OTel receiver factory
+│   ├── receiver.go                    # Lifecycle (Start / Shutdown)
+│   ├── grpc_service.go                # MdtDialout handler, metric conversion
+│   ├── telemetry.go                   # Internal observability (8 metrics)
+│   ├── yang_parser.go                 # Built-in YANG modules
+│   ├── rfc_yang_parser.go             # RFC 6020/7950 parser
+│   └── metadata.yaml                  # OTel component metadata
+├── proto/                             # Cisco .proto files + generated Go
+├── examples/                          # Config examples
+├── docker-compose.yaml                # Full Splunk HEC stack
+├── Dockerfile                         # Multi-stage build
+├── builder-config.yaml                # OTel Collector Builder manifest
+└── collector-config.yaml              # Default collector config
+```
+
+## Data Flow
+
+```
+Cisco IOS XE  ──gRPC dial-out──▶  OTel Collector  ──exporter──▶  Backend
+                                  ┌──────────────┐
+  kvGPB payload ──────────────▶   │ cisco_telemetry │
+  MdtDialoutArgs                  │   receiver      │
+                                  │                 │
+                                  │  ● Decode kvGPB │
+                                  │  ● YANG parser  │
+                                  │  ● → OTel Metrics│
+                                  └────────┬────────┘
+                                           │
+                                    batch processor
+                                           │
+                             ┌─────────────┼─────────────┐
+                             ▼             ▼             ▼
+                         Splunk HEC   Prometheus    Debug/OTLP
+```
+
+## Development
 
 ```bash
-# Run all tests with coverage (fast execution)
-go test -coverprofile=coverage.out ./receiver/ciscotelemetryreceiver/ -skip "MultipleStartShutdown|StartTwice"
+# Run all tests
+go test ./receiver/ciscotelemetryreceiver/ -count=1 -race
 
-# View detailed coverage report
+# Benchmarks
+go test -bench=. -benchmem ./receiver/ciscotelemetryreceiver/
+
+# Coverage report
+go test -coverprofile=coverage.out ./receiver/ciscotelemetryreceiver/
 go tool cover -html=coverage.out
-
-# Check coverage percentage
-go tool cover -func=coverage.out | tail -1
 ```
 
-### Quality Metrics
+## Common Cisco IOS XE Subscriptions
 
-- **🎯 Coverage Achievement**: 83.6% (exceeded 80% goal by 3.6%)
-- **⚡ Fast Execution**: Complete test suite runs in <5 seconds  
-- **🧪 Comprehensive Testing**: 80+ focused test cases across all components
-- **🔒 Security Validated**: 100% coverage on authentication and TLS handling
-- **🏗️ Component Coverage**: All major components (Factory, gRPC, YANG, Security, Telemetry)
-- **📈 Massive Improvement**: +66.4 percentage points from 17.2% baseline
+```cisco
+! CPU utilization (every 30 seconds)
+telemetry ietf subscription 101
+ encoding encode-kvgpb
+ filter xpath /process-cpu-ios-xe-oper:cpu-usage/cpu-utilization
+ stream yang-push
+ update-policy periodic 30000
+ receiver ip address <COLLECTOR_IP> 57500 protocol grpc-tcp
 
-### Test Categories
+! Interface statistics (every 10 seconds)
+telemetry ietf subscription 102
+ encoding encode-kvgpb
+ filter xpath /interfaces-ios-xe-oper:interfaces/interface/statistics
+ stream yang-push
+ update-policy periodic 10000
+ receiver ip address <COLLECTOR_IP> 57500 protocol grpc-tcp
 
-- **Unit Tests**: 60+ focused unit tests for individual components
-- **Integration Tests**: End-to-end telemetry processing validation  
-- **Security Tests**: Comprehensive TLS/authentication validation
-- **Performance Tests**: Benchmarks for high-throughput scenarios
-- **Error Tests**: 50+ edge cases and error condition handling
-- **RFC Compliance**: YANG parser validation against RFC 6020/7950
-
-### Performance Testing
-
-```bash
-# Run performance benchmarks
-go test -bench=. ./receiver/ciscotelemetryreceiver/
-
-# Memory profiling
-go test -benchmem -memprofile=mem.prof ./receiver/ciscotelemetryreceiver/
-
-# CPU profiling  
-go test -cpuprofile=cpu.prof ./receiver/ciscotelemetryreceiver/
+! Memory usage (every 30 seconds)
+telemetry ietf subscription 103
+ encoding encode-kvgpb
+ filter xpath /memory-ios-xe-oper:memory-statistics/memory-statistic
+ stream yang-push
+ update-policy periodic 30000
+ receiver ip address <COLLECTOR_IP> 57500 protocol grpc-tcp
 ```
-
-**[See Complete Coverage Report →](COVERAGE_ACHIEVEMENT_REPORT.md)**
-
-## Security Features
-
-- **TLS/mTLS Authentication**: Full certificate-based security
-- **Rate Limiting**: Per-client request rate control  
-- **IP Allowlisting**: CIDR-based access control
-- **Resource Protection**: Connection limits and timeouts
-- **Security Metrics**: Built-in security monitoring
-
-See **[SECURITY.md](docs/SECURITY.md)** for security configuration guide.
-
-## Architecture
-
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Cisco IOS XE  │───▶│  OTEL Receiver  │───▶│ OTEL Collector  │
-│                 │    │                 │    │                 │
-│ • MDT gRPC      │    │ • Security Mgr  │    │ • Processors    │
-│ • kvGPB Encode  │    │ • YANG Parser   │    │ • Exporters     │
-│ • TLS Client    │    │ • Metrics Conv  │    │ • Backends      │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-```
-
-## Production Readiness
-
-**OpenTelemetry Mainline Compliance**
-
-All requirements for OpenTelemetry mainline acceptance:
-
-- **Alpha Readiness**: Component structure, metadata, factory implementation
-- **Testing Excellence**: >80% test coverage with comprehensive test suite
-- **Internal Observability**: 8 built-in metrics for monitoring data flow
-- **Security Implementation**: Enterprise-grade TLS, rate limiting, access control
-- **Documentation Excellence**: Complete guides and examples
-
-### Performance Benchmarks
-
-- **Throughput**: >1,000 messages/second
-- **Latency**: <10ms processing time per message
-- **Memory**: ~14KB allocation per message (efficient processing)
-- **Connections**: Supports 1,000+ concurrent telemetry streams
-
-## Documentation
-
-| Document | Description |
-|----------|-------------|
-| **[CONFIG.md](docs/CONFIG.md)** | Complete configuration reference |
-| **[SECURITY.md](docs/SECURITY.md)** | Security setup and best practices |
-| **[PERFORMANCE.md](docs/PERFORMANCE.md)** | Performance tuning and benchmarks |
-| **[TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** | Common issues and solutions |
-| **[YANG_MODULES.md](docs/YANG_MODULES.md)** | YANG parser and module support |
-
-## Getting Started
-
-### Prerequisites
-
-- Go 1.21+
-- OpenTelemetry Collector v0.118.0+
-- Cisco IOS XE 16.9+ with Model-Driven Telemetry
-
-### Installation
-
-1. **Clone Repository**
-   ```bash
-   git clone https://github.com/jcohoe/otel-grpc-cisco-receiver
-   cd otel-grpc-cisco-receiver
-   ```
-
-2. **Generate Protocol Buffers**
-   ```bash
-   ./scripts/generate-proto.sh
-   ```
-
-3. **Build Component**
-   ```bash
-   go build -o build/cisco-telemetry-receiver ./cmd/test-receiver
-   ```
-
-4. **Run Tests**
-   ```bash
-   go test ./receiver/ciscotelemetryreceiver -v
-   ```
-
-## 🧪 Testing & Validation
-
-### Comprehensive Test Suite
-
-```bash
-# Unit Tests
-go test ./receiver/ciscotelemetryreceiver -v
-
-# Security Tests  
-go test -run=TestSecurity ./receiver/ciscotelemetryreceiver
-
-# Performance Benchmarks
-go test -bench=. ./receiver/ciscotelemetryreceiver
-
-# Integration Tests
-go test -run=TestIntegration ./receiver/ciscotelemetryreceiver
-```
-
-### Live Testing Environment
-
-```bash
-# Terminal 1: Start receiver
-go run ./cmd/test-receiver
-
-# Terminal 2: Send test telemetry
-go run ./cmd/test-client
-```
-
-## 🤝 Contributing
-
-We welcome contributions! Please see:
-
-1. **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contribution guidelines
-2. **[Code of Conduct](CODE_OF_CONDUCT.md)** - Community standards
-3. **[Issues](https://github.com/jcohoe/otel-grpc-cisco-receiver/issues)** - Bug reports and feature requests
-
-### Development Setup
-
-```bash
-# Clone and setup
-git clone https://github.com/jcohoe/otel-grpc-cisco-receiver
-cd otel-grpc-cisco-receiver
-go mod tidy
-
-# Generate protos and run tests
-./scripts/generate-proto.sh
-go test ./... -v
-```
-
----
-
-## 🏆 **OpenTelemetry Contribution Ready!**
-
-### Achievement Summary
-
-**✅ EXCEEDED ALL GOALS:**
-- **🎯 Target Smashed**: 83.6% coverage (exceeded 80% goal by 3.6%)
-- **📈 Massive Improvement**: +66.4 percentage points from 17.2% baseline  
-- **⚡ Performance**: <5 second test execution, enterprise-grade reliability
-- **🔒 Security Complete**: 100% coverage on TLS, authentication, and access control
-- **📚 Well Documented**: Comprehensive coverage report and contribution guides
-
-### OpenTelemetry Standards Met
-
-| Requirement | Status | Details |
-|-------------|--------|---------|
-| **Test Coverage** | ✅ **83.6%** | Exceeds 80% minimum by 3.6% |
-| **Component Structure** | ✅ Complete | Factory, Config, Receiver patterns |
-| **Security Implementation** | ✅ Production-Ready | TLS/mTLS, rate limiting, IP controls |
-| **Internal Observability** | ✅ 8 Metrics | Complete data flow monitoring |
-| **Documentation** | ✅ Comprehensive | Full API docs, guides, examples |
-| **Error Handling** | ✅ Robust | 50+ error scenarios tested |
-
-### 🚀 **Ready for OpenTelemetry Mainline Contribution**
-
-This receiver represents **world-class engineering** with test coverage that **exceeds industry standards**. The systematic approach to achieving 83.6% coverage demonstrates production-ready quality suitable for the OpenTelemetry ecosystem.
-
-**[View Detailed Coverage Achievement Report →](COVERAGE_ACHIEVEMENT_REPORT.md)**
-
----
 
 ## License
 
-Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
-
-## Acknowledgments
-
-- **OpenTelemetry Community** for the collector framework
-- **Cisco Systems** for telemetry specifications and support  
-- **Go Community** for excellent gRPC and testing tools
-
-*Built with ❤️ for the OpenTelemetry community*
-
-## 📜 License
-
-This project is licensed under the **Apache License 2.0** - see [LICENSE](LICENSE) for details.
-
-## 🙏 Acknowledgments
-
-- **Cisco Systems** - For the MDT gRPC protocol specification
-- **OpenTelemetry Community** - For the collector framework and standards
-- **Go gRPC Team** - For the excellent gRPC implementation
-
----
-
-**📧 Support**: For questions or support, please open an [issue](https://github.com/jcohoe/otel-grpc-cisco-receiver/issues) or join the OpenTelemetry Slack community.
-
-**🔗 Related Projects**: 
-- [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector)
-- [Cisco IOS XE Programmability](https://developer.cisco.com/docs/ios-xe/)
-- [Model-Driven Telemetry](https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/prog/configuration/169/b_169_programmability_cg/model_driven_telemetry.html)
-
-Cisco IOS XE uses Model Driven Telemetry (MDT) with:
-- **Transport**: gRPC dial-out (switch initiates connection)
-- **Encoding**: kvGPB (key-value Google Protocol Buffers)
-- **Service**: `gRPCMdtDialout.MdtDialout` streaming RPC
-
-### Data Flow
-
-1. Cisco switch establishes gRPC connection to collector
-2. Switch streams `MdtDialoutArgs` messages containing telemetry data
-3. Receiver decodes kvGPB payload from `data` field
-4. Telemetry data is parsed using `telemetry.proto` schema
-5. Data is converted to OpenTelemetry metrics format
-6. Metrics are forwarded to configured OTEL exporters (e.g., Splunk)
-
-## Next Steps
-
-To complete this implementation, we need to:
-
-1. **Implement gRPC Service**: Add the `MdtDialout` service handler
-2. **kvGPB Parser**: Decode the telemetry data from the `data` field
-3. **Metrics Conversion**: Convert Cisco telemetry to OTEL metrics
-4. **Testing**: Add unit and integration tests
-5. **Documentation**: Complete API documentation
+Apache License 2.0 — see [LICENSE](LICENSE).
 
 ## References
 
-- [Cisco Model Driven Telemetry Guide](https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/prog/configuration/1718/b-1718-programmability-cg/model-driven-telemetry.html)
-- [OpenTelemetry Collector Development](https://opentelemetry.io/docs/collector/configuration/)
+- [Cisco Model-Driven Telemetry Guide](https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/prog/configuration/1718/b-1718-programmability-cg/model-driven-telemetry.html)
+- [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/)
 - [Cisco Proto Definitions](https://github.com/cisco-ie/cisco-proto)
-- [Telegraf cisco_telemetry_mdt Plugin](https://github.com/influxdata/telegraf/tree/v1.36.3/plugins/inputs/cisco_telemetry_mdt)
+- [OTel Collector Builder](https://github.com/open-telemetry/opentelemetry-collector/tree/main/cmd/builder)

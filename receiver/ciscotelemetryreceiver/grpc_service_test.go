@@ -196,8 +196,9 @@ func TestKvGPBDataParsing(t *testing.T) {
 			yangParser := NewYANGParser()
 			yangParser.LoadBuiltinModules()
 			service := &grpcService{
-				receiver:   ctr,
-				yangParser: yangParser,
+				receiver:      ctr,
+				yangParser:    yangParser,
+				rfcYangParser: NewRFC6020Parser(),
 			}
 
 			// Create test telemetry

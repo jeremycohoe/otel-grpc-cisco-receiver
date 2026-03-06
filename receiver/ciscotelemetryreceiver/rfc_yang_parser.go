@@ -3,12 +3,13 @@ package ciscotelemetryreceiver
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	"go.uber.org/zap"
 )
 
 // RFC6020Parser implements RFC 6020 (YANG 1.0) and RFC 7950 (YANG 1.1) compliant YANG parsing
@@ -16,7 +17,7 @@ type RFC6020Parser struct {
 	modules          map[string]*RFC6020Module
 	builtinTypes     map[string]*RFC6020BuiltinType
 	typeRestrictions map[string]*RFC6020TypeRestriction
-	logger           *log.Logger
+	logger           *zap.Logger
 }
 
 // RFC6020Module represents a complete YANG module based on RFC specifications
@@ -232,13 +233,19 @@ type RFC6020ResolvedType struct {
 	Description     string           `json:"description,omitempty"`
 }
 
-// NewRFC6020Parser creates a new RFC-compliant YANG parser
+// NewRFC6020Parser creates a new RFC-compliant YANG parser with a no-op logger.
+// Use NewRFC6020ParserWithLogger to supply a production zap.Logger.
 func NewRFC6020Parser() *RFC6020Parser {
+	return NewRFC6020ParserWithLogger(zap.NewNop())
+}
+
+// NewRFC6020ParserWithLogger creates a new RFC-compliant YANG parser with the given logger.
+func NewRFC6020ParserWithLogger(logger *zap.Logger) *RFC6020Parser {
 	parser := &RFC6020Parser{
 		modules:          make(map[string]*RFC6020Module),
 		builtinTypes:     make(map[string]*RFC6020BuiltinType),
 		typeRestrictions: make(map[string]*RFC6020TypeRestriction),
-		logger:           log.New(os.Stdout, "[RFC6020Parser] ", log.LstdFlags),
+		logger:           logger,
 	}
 
 	parser.initializeBuiltinTypes()
@@ -393,7 +400,7 @@ func (p *RFC6020Parser) initializeBuiltinTypes() {
 		CanonicalFormat: "Absolute path with predicates in canonical order",
 	}
 
-	p.logger.Printf("Initialized %d built-in YANG types per RFC 6020/7950", len(p.builtinTypes))
+	p.logger.Debug("Initialized built-in YANG types per RFC 6020/7950", zap.Int("count", len(p.builtinTypes)))
 }
 
 // ParseYANGModule parses a YANG module from content according to RFC specifications
@@ -433,7 +440,7 @@ func (p *RFC6020Parser) ParseYANGModule(content, filename string) (*RFC6020Modul
 	}
 
 	p.modules[module.Name] = module
-	p.logger.Printf("Successfully parsed YANG module '%s' from %s", module.Name, filename)
+	p.logger.Debug("Successfully parsed YANG module", zap.String("module", module.Name), zap.String("file", filename))
 
 	return module, nil
 }
@@ -915,8 +922,10 @@ func (p *RFC6020Parser) performSemanticAnalysis(module *RFC6020Module) error {
 	// Classify metrics as counters or gauges
 	p.classifyMetrics(module)
 
-	p.logger.Printf("Semantic analysis complete for module %s: %d keyed paths, %d data types",
-		module.Name, len(module.KeyedPaths), len(module.DataTypes))
+	p.logger.Debug("Semantic analysis complete",
+		zap.String("module", module.Name),
+		zap.Int("keyed_paths", len(module.KeyedPaths)),
+		zap.Int("data_types", len(module.DataTypes)))
 
 	return nil
 }
@@ -1217,7 +1226,7 @@ func (p *RFC6020Parser) AnalyzeTelemetryPath(encodingPath string) *RFC6020Teleme
 		// Create a dynamic module for unknown modules
 		module = p.createDynamicModule(moduleName, encodingPath)
 		p.modules[moduleName] = module
-		p.logger.Printf("Created dynamic YANG module for: %s", moduleName)
+		p.logger.Debug("Created dynamic YANG module", zap.String("module", moduleName))
 	}
 
 	// Parse the XPath to identify data nodes and list keys

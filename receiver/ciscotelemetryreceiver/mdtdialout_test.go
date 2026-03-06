@@ -15,10 +15,10 @@ import (
 
 // mockMdtStream implements a simple mock for testing MdtDialout method
 type mockMdtStream struct {
-	grpc.BidiStreamingServer[*pb.MdtDialoutArgs, *pb.MdtDialoutArgs]
+	grpc.BidiStreamingServer[pb.MdtDialoutArgs, pb.MdtDialoutArgs]
 	recvCount int
 	sendCount int
-	ctx       context.Context
+	streamCtx context.Context
 }
 
 func (m *mockMdtStream) Recv() (*pb.MdtDialoutArgs, error) {
@@ -58,7 +58,7 @@ func (m *mockMdtStream) Send(response *pb.MdtDialoutArgs) error {
 }
 
 func (m *mockMdtStream) Context() context.Context {
-	return m.ctx
+	return m.streamCtx
 }
 
 // TestMdtDialout_MockFlow tests the MdtDialout method with mock stream
@@ -75,15 +75,16 @@ func TestMdtDialout_MockFlow(t *testing.T) {
 		yangParser.LoadBuiltinModules()
 
 		service := &grpcService{
-			receiver:   receiver,
-			yangParser: yangParser,
+			receiver:      receiver,
+			yangParser:    yangParser,
+			rfcYangParser: NewRFC6020Parser(),
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
 		mockStream := &mockMdtStream{
-			ctx: ctx,
+			streamCtx: ctx,
 		}
 
 		// Test MdtDialout method - should process messages and handle EOF gracefully

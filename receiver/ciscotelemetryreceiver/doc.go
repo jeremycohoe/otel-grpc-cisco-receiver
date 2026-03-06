@@ -6,4 +6,4 @@
 // Package ciscotelemetryreceiver provides an OpenTelemetry Collector receiver
 // for Cisco IOS XE telemetry data via gRPC dial-out with kvGPB encoding.
 // It includes an RFC 6020/7950 compliant YANG parser for dynamic schema discovery.
-package ciscotelemetryreceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/ciscotelemetryreceiver"
+package ciscotelemetryreceiver // import "github.com/jcohoe/otel-grpc-cisco-receiver/receiver/ciscotelemetryreceiver"

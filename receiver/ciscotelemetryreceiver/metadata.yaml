@@ -1,25 +1,23 @@
 # metadata.yaml for Cisco Telemetry Receiver
 # OpenTelemetry Collector component metadata
 
-type: ciscotelemetry
-scope_name: github.com/open-telemetry/opentelemetry-collector-contrib/receiver/ciscotelemetryreceiver
+type: cisco_telemetry
+scope_name: github.com/jcohoe/otel-grpc-cisco-receiver/receiver/ciscotelemetryreceiver
 
 status:
   class: receiver
   stability:
     development: [metrics]
-  distributions: []  # Will be added to contrib after alpha graduation
+  distributions: []
   codeowners:
-    active: [jcohoe]  # Need to add sponsor when found
+    active: [jcohoe]
     emeritus: []
 
-# Component description
 description: >-
   Cisco Telemetry receiver can receive telemetry data from Cisco IOS XE devices 
   via gRPC dial-out with kvGPB (key-value GPB) encoding. It includes an RFC 6020/7950 
   compliant YANG parser for dynamic schema discovery and semantic type classification.
 
-# Supported platforms
 supported_platforms: [linux, windows, darwin]
 
 resource_attributes:
@@ -51,28 +49,28 @@ telemetry:
       enabled: true
       description: Number of telemetry messages received
       unit: "1"
-      gauge:
+      sum:
         value_type: int
         monotonic: true
     cisco_telemetry_receiver_messages_processed:
       enabled: true  
       description: Number of telemetry messages successfully processed
       unit: "1"
-      gauge:
+      sum:
         value_type: int
         monotonic: true
     cisco_telemetry_receiver_messages_dropped:
       enabled: true
       description: Number of telemetry messages dropped due to errors
       unit: "1"
-      gauge:
+      sum:
         value_type: int
         monotonic: true
     cisco_telemetry_receiver_bytes_received:
       enabled: true
       description: Total bytes received from telemetry connections
       unit: "By"
-      gauge:
+      sum:
         value_type: int
         monotonic: true
     cisco_telemetry_receiver_connections_active:
@@ -97,13 +95,11 @@ telemetry:
       enabled: true
       description: Number of gRPC errors encountered
       unit: "1"
-      gauge:
+      sum:
         value_type: int
         monotonic: true
 
-# Tests configuration for CI/CD
 tests:
-  # Skip tests that require external dependencies
   skip_lifecycle: false
   skip_shutdown: false
   config_sources: ["file"]

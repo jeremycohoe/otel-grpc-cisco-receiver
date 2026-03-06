@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/receiver"
+	"go.opentelemetry.io/otel/metric/noop"
 	"go.uber.org/zap"
 )
 
@@ -84,7 +85,8 @@ func main() {
 	settings := receiver.Settings{
 		ID: component.NewIDWithName(componentType, "test"),
 		TelemetrySettings: component.TelemetrySettings{
-			Logger: zap.NewNop(),
+			Logger:        zap.NewNop(),
+			MeterProvider: noop.NewMeterProvider(),
 		},
 	}
 

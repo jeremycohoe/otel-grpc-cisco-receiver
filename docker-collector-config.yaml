@@ -1,0 +1,55 @@
+# OTel Collector config for Docker Compose (Splunk HEC backend)
+# This file is mounted into the otel-collector container.
+
+receivers:
+  cisco_telemetry:
+    listen_address: "0.0.0.0:57500"
+    max_recv_msg_size_mib: 4
+    max_concurrent_streams: 128
+    keepalive:
+      time: 30s
+      timeout: 10s
+    yang:
+      enable_rfc_parser: true
+      cache_modules: true
+      max_modules: 1000
+    # Uncomment for mTLS:
+    # tls:
+    #   cert_file: /etc/otel/certs/server.crt
+    #   key_file:  /etc/otel/certs/server.key
+    #   client_ca_file: /etc/otel/certs/ca.crt
+
+processors:
+  batch:
+    timeout: 2s
+    send_batch_size: 1024
+
+exporters:
+  debug:
+    verbosity: basic
+
+  splunk_hec:
+    endpoint: "https://splunk:8088/services/collector"
+    token: "cisco-mdt-token"
+    source: "cisco:mdt"
+    sourcetype: "cisco:mdt:grpc"
+    index: "main"
+    tls:
+      insecure_skip_verify: true   # Splunk dev cert is self-signed
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    metrics:
+      receivers: [cisco_telemetry]
+      processors: [batch]
+      exporters: [splunk_hec, debug]
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      address: 0.0.0.0:8888

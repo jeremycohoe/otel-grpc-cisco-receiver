@@ -1,17 +1,36 @@
-# OpenTelemetry Collector Configuration with Cisco Telemetry Receiver
-# This example shows how to configure the collector to receive telemetry from Cisco IOS XE switches
+# OpenTelemetry Collector Configuration Example for Cisco IOS XE MDT Telemetry
+#
+# Receiver: cisco_telemetry  (gRPC dial-out, kvGPB encoding)
+# Backends: debug, Splunk HEC, OTLP — uncomment what you need.
 
 receivers:
   cisco_telemetry:
+    # The address:port the Cisco switches will dial out to.
     listen_address: "0.0.0.0:57500"
-    tls_enabled: false
-    # For TLS/mTLS configuration:
-    # tls_enabled: true
-    # tls_cert_file: "/path/to/server.crt"
-    # tls_key_file: "/path/to/server.key"
-    # tls_client_ca_file: "/path/to/ca.crt"  # For mTLS
-    keep_alive_timeout: 60s
-    max_message_size: 4194304  # 4MB
+
+    # Maximum inbound gRPC message size (MiB). Default: 4
+    max_recv_msg_size_mib: 4
+
+    # Maximum concurrent gRPC streams. Default: 128
+    max_concurrent_streams: 128
+
+    # gRPC keep-alive settings
+    keepalive:
+      time: 30s
+      timeout: 10s
+
+    # YANG parsing options
+    yang:
+      enable_rfc_parser: true
+      cache_modules: true
+      max_modules: 1000
+
+    # TLS / mTLS — uses the standard OTel configtls.ServerConfig.
+    # Uncomment below for production mTLS:
+    # tls:
+    #   cert_file: /path/to/server.crt
+    #   key_file:  /path/to/server.key
+    #   client_ca_file: /path/to/ca.crt       # enables mTLS
 
 processors:
   batch:
@@ -19,22 +38,34 @@ processors:
     send_batch_size: 1024
 
 exporters:
-  # Example: Export to Splunk HEC
-  splunk_hec:
-    endpoint: "https://your-splunk-instance:8088/services/collector"
-    token: "your-hec-token"
-    
-  # Example: Export to OTLP (e.g., Jaeger, etc.)
-  otlp:
-    endpoint: "http://localhost:4317"
-    
-  # For debugging
+  # Debug exporter — prints metrics to stdout
   debug:
     verbosity: detailed
+
+  # Splunk HEC exporter
+  # splunk_hec:
+  #   endpoint: "https://your-splunk:8088/services/collector"
+  #   token: "your-hec-token"
+  #   source: "cisco:mdt"
+  #   sourcetype: "cisco:mdt:grpc"
+  #   index: "cisco_metrics"
+  #   tls:
+  #     insecure_skip_verify: true   # set false in production
+
+  # OTLP exporter (Prometheus, Grafana Mimir, Datadog, etc.)
+  # otlp:
+  #   endpoint: "http://localhost:4317"
+  #   tls:
+  #     insecure: true
 
 service:
   pipelines:
     metrics:
-      receivers: [cisco_telemetry]
+      receivers:  [cisco_telemetry]
       processors: [batch]
-      exporters: [splunk_hec, debug]
+      exporters:  [debug]   # add splunk_hec, otlp as needed
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      address: localhost:8888

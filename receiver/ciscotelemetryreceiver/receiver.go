@@ -25,7 +25,6 @@ type ciscoTelemetryReceiver struct {
 	listener         net.Listener
 	wg               sync.WaitGroup
 	telemetryBuilder *telemetryBuilder
-	securityManager  *SecurityManager
 }
 
 func newCiscoTelemetryReceiver(
@@ -42,92 +41,72 @@ func newCiscoTelemetryReceiver(
 		settings.Logger = zap.NewNop()
 	}
 
-	// Migrate legacy config if needed
-	config.MigrateLegacyConfig()
-
 	// Initialize telemetry builder for internal observability
 	telemetryBuilder, err := newTelemetryBuilder(settings.Logger, settings.MeterProvider.Meter("cisco_telemetry_receiver"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create telemetry builder: %w", err)
 	}
 
-	// Initialize security manager
-	securityManager := NewSecurityManager(&config.Security, &config.TLS, settings.Logger)
-
 	return &ciscoTelemetryReceiver{
 		config:           config,
 		settings:         settings,
 		consumer:         consumer,
 		telemetryBuilder: telemetryBuilder,
-		securityManager:  securityManager,
 	}, nil
 }
 
 func (ctr *ciscoTelemetryReceiver) Start(ctx context.Context, host component.Host) error {
+	var opts []grpc.ServerOption
+
+	// Configure TLS / mTLS via OTel configtls when provided.
+	if ctr.config.TLS != nil {
+		tlsCfg, err := ctr.config.TLS.LoadTLSConfig(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to load TLS config: %w", err)
+		}
+		opts = append(opts, grpc.Creds(credentials.NewTLS(tlsCfg)))
+	}
+
+	// Keep-alive settings.
+	if ctr.config.KeepAlive.Time > 0 {
+		kasp := keepalive.ServerParameters{
+			Time:    ctr.config.KeepAlive.Time,
+			Timeout: ctr.config.KeepAlive.Timeout,
+		}
+		minTime := ctr.config.KeepAlive.EnforcementMinTime
+		if minTime == 0 {
+			minTime = 30 * time.Second
+		}
+		kaep := keepalive.EnforcementPolicy{
+			MinTime:             minTime,
+			PermitWithoutStream: ctr.config.KeepAlive.EnforcementPermitNoStream,
+		}
+		opts = append(opts, grpc.KeepaliveParams(kasp), grpc.KeepaliveEnforcementPolicy(kaep))
+	}
+
+	// Max receive message size (config is in MiB, gRPC wants bytes).
+	if ctr.config.MaxRecvMsgSizeMiB > 0 {
+		opts = append(opts, grpc.MaxRecvMsgSize(ctr.config.MaxRecvMsgSizeMiB*1024*1024))
+	}
+	if ctr.config.MaxConcurrentStreams > 0 {
+		opts = append(opts, grpc.MaxConcurrentStreams(ctr.config.MaxConcurrentStreams))
+	}
+
+	// Create listener.
 	listener, err := net.Listen("tcp", ctr.config.ListenAddress)
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", ctr.config.ListenAddress, err)
 	}
 	ctr.listener = listener
 
-	var opts []grpc.ServerOption
-
-	// Configure TLS using security manager
-	if ctr.config.TLS.Enabled || ctr.config.TLSEnabled {
-		tlsConfig, err := ctr.securityManager.CreateTLSConfig()
-		if err != nil {
-			return fmt.Errorf("failed to create TLS configuration: %w", err)
-		}
-		if tlsConfig != nil {
-			opts = append(opts, grpc.Creds(credentials.NewTLS(tlsConfig)))
-		}
-	}
-
-	// Add security interceptor for rate limiting and IP filtering
-	securityInterceptor := ctr.securityManager.CreateSecurityInterceptor()
-	opts = append(opts, grpc.UnaryInterceptor(securityInterceptor))
-
-	// Configure keep-alive (new format first, then legacy)
-	if ctr.config.KeepAlive.Time > 0 || ctr.config.KeepAliveTimeout > 0 {
-		kaep := keepalive.EnforcementPolicy{
-			MinTime:             30 * time.Second,
-			PermitWithoutStream: true,
-		}
-
-		keepAliveTime := ctr.config.KeepAlive.Time
-		keepAliveTimeout := ctr.config.KeepAlive.Timeout
-
-		// Fall back to legacy config if new config is empty
-		if keepAliveTime == 0 && ctr.config.KeepAliveTimeout > 0 {
-			keepAliveTime = ctr.config.KeepAliveTimeout
-			keepAliveTimeout = 10 * time.Second
-		}
-
-		kasp := keepalive.ServerParameters{
-			Time:    keepAliveTime,
-			Timeout: keepAliveTimeout,
-		}
-		opts = append(opts, grpc.KeepaliveEnforcementPolicy(kaep), grpc.KeepaliveParams(kasp))
-	}
-
-	// Configure max message size and concurrent streams
-	if ctr.config.MaxMessageSize > 0 {
-		opts = append(opts, grpc.MaxRecvMsgSize(ctr.config.MaxMessageSize))
-	}
-	if ctr.config.MaxConcurrentStreams > 0 {
-		opts = append(opts, grpc.MaxConcurrentStreams(ctr.config.MaxConcurrentStreams))
-	}
-
 	ctr.server = grpc.NewServer(opts...)
 
-	// Initialize YANG parser with builtin modules
+	// Initialize YANG parsers.
 	yangParser := NewYANGParser()
 	yangParser.LoadBuiltinModules()
+	rfcYangParser := NewRFC6020ParserWithLogger(ctr.settings.Logger)
 
-	// Initialize RFC 6020/7950 compliant YANG parser
-	rfcYangParser := NewRFC6020Parser()
-
-	// Register the gRPC service for Cisco telemetry
+	// Register the Cisco MDT gRPC dial-out service.
 	service := &grpcService{
 		receiver:      ctr,
 		yangParser:    yangParser,
@@ -135,6 +114,7 @@ func (ctr *ciscoTelemetryReceiver) Start(ctx context.Context, host component.Hos
 	}
 	pb.RegisterGRPCMdtDialoutServer(ctr.server, service)
 
+	// Serve in background goroutine.
 	ctr.wg.Add(1)
 	go func() {
 		defer ctr.wg.Done()
@@ -143,30 +123,32 @@ func (ctr *ciscoTelemetryReceiver) Start(ctx context.Context, host component.Hos
 		}
 	}()
 
+	tlsEnabled := ctr.config.TLS != nil
 	ctr.settings.Logger.Info("Cisco telemetry receiver started",
 		zap.String("listen_address", ctr.config.ListenAddress),
-		zap.Bool("tls_enabled", ctr.config.TLSEnabled))
+		zap.Bool("tls_enabled", tlsEnabled))
 
 	return nil
 }
 
 func (ctr *ciscoTelemetryReceiver) Shutdown(ctx context.Context) error {
 	if ctr.server != nil {
-		ctr.server.GracefulStop()
-	}
-	if ctr.listener != nil {
-		ctr.listener.Close()
+		// GracefulStop closes the listener internally, so we don't call
+		// listener.Close() separately (avoids double-close).
+		stopped := make(chan struct{})
+		go func() {
+			ctr.server.GracefulStop()
+			close(stopped)
+		}()
+		select {
+		case <-stopped:
+		case <-ctx.Done():
+			// Context deadline exceeded — force stop.
+			ctr.server.Stop()
+		}
 	}
 	ctr.wg.Wait()
-
-	// Clean up security manager
-	if ctr.securityManager != nil {
-		ctr.securityManager.Shutdown()
-	}
 
 	ctr.settings.Logger.Info("Cisco telemetry receiver stopped")
 	return nil
 }
-
-// TODO: Implement the gRPC service methods for handling Cisco telemetry data
-// This will need to process the kvGPB encoded data and convert to OTEL metrics

@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/receiver"
+	"go.opentelemetry.io/otel/metric/noop"
 	"go.uber.org/zap"
 )
 
@@ -25,10 +26,9 @@ func main() {
 
 	// Create configuration
 	config := &ciscotelemetryreceiver.Config{
-		ListenAddress:    "0.0.0.0:57500",
-		TLSEnabled:       false,
-		KeepAliveTimeout: 60000000000, // 60 seconds in nanoseconds
-		MaxMessageSize:   4194304,     // 4MB
+		ListenAddress:        "0.0.0.0:57500",
+		MaxRecvMsgSizeMiB:    4,
+		MaxConcurrentStreams:  128,
 	}
 
 	// Create a consumer that prints metrics (you can replace this with Splunk HEC, etc.)
@@ -39,7 +39,8 @@ func main() {
 	settings := receiver.Settings{
 		ID: component.NewIDWithName(componentType, "standalone"),
 		TelemetrySettings: component.TelemetrySettings{
-			Logger: zap.Must(zap.NewProduction()),
+			Logger:        zap.Must(zap.NewProduction()),
+			MeterProvider: noop.NewMeterProvider(),
 		},
 	}
 
@@ -57,9 +58,8 @@ func main() {
 	fmt.Printf("Starting Cisco Telemetry Receiver on %s\n", config.ListenAddress)
 	fmt.Println("Configuration:")
 	fmt.Printf("  - Listen Address: %s\n", config.ListenAddress)
-	fmt.Printf("  - TLS Enabled: %v\n", config.TLSEnabled)
-	fmt.Printf("  - Keep Alive: %v\n", config.KeepAliveTimeout)
-	fmt.Printf("  - Max Message Size: %d bytes\n", config.MaxMessageSize)
+	fmt.Printf("  - TLS Enabled: %v\n", config.TLS != nil)
+	fmt.Printf("  - Max Recv Msg Size: %d MiB\n", config.MaxRecvMsgSizeMiB)
 
 	// Start the receiver
 	ctx := context.Background()

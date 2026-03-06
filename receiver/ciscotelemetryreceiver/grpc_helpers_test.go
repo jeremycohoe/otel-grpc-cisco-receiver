@@ -24,13 +24,15 @@ func TestGrpcService_HelperMethods(t *testing.T) {
 
 		yangParser := NewYANGParser()
 		yangParser.LoadBuiltinModules()
+		rfcYangParser := NewRFC6020Parser()
 
 		service := &grpcService{
-			receiver:   receiver,
-			yangParser: yangParser,
+			receiver:      receiver,
+			yangParser:    yangParser,
+			rfcYangParser: rfcYangParser,
 		}
 
-		// Test processKvGPBData method (0% coverage)
+		// Test processKvGPBData method
 		metrics := pmetric.NewMetrics()
 		resourceMetrics := metrics.ResourceMetrics().AppendEmpty()
 		scopeMetrics := resourceMetrics.ScopeMetrics().AppendEmpty()
@@ -51,20 +53,7 @@ func TestGrpcService_HelperMethods(t *testing.T) {
 		service.processKvGPBData(scopeMetrics, telemetry)
 		assert.True(t, scopeMetrics.Metrics().Len() >= 0) // Should process without error
 
-		// Test createGaugeMetric method (0% coverage)
-		metric := scopeMetrics.Metrics().AppendEmpty()
-		timestamp := pcommon.NewTimestampFromTime(time.Now())
-		service.createGaugeMetric(metric, "test_gauge", "/test/path", 123.45, timestamp)
-
-		assert.Contains(t, metric.Name(), "test_gauge") // Has cisco. prefix
-		assert.Equal(t, pmetric.MetricTypeGauge, metric.Type())
-
-		// Test createInfoMetric method (0% coverage)
-		infoMetric := scopeMetrics.Metrics().AppendEmpty()
-		service.createInfoMetric(infoMetric, "test_info", "/test/path", "test_value", timestamp)
-
-		assert.Contains(t, infoMetric.Name(), "test_info")          // Has cisco. prefix and _info suffix
-		assert.Equal(t, pmetric.MetricTypeGauge, infoMetric.Type()) // Test isKeyField method (0% coverage)
+		// Test isKeyField method
 		analysis := &PathAnalysis{
 			Keys: map[string]string{"interface-name": "key", "port-id": "key"},
 		}
@@ -72,12 +61,7 @@ func TestGrpcService_HelperMethods(t *testing.T) {
 		assert.False(t, service.isKeyField("counter-value", analysis))
 		assert.False(t, service.isKeyField("unknown", nil))
 
-		// Test enhanceMetricWithYANGInfo method (0% coverage)
-		enhanceMetric := scopeMetrics.Metrics().AppendEmpty()
-		service.enhanceMetricWithYANGInfo(enhanceMetric, "test_field", analysis, "/test/path")
-		// Should not crash - just adds metadata
-
-		// Test addYANGAttributes method (0% coverage)
+		// Test addYANGAttributes method
 		attrs := pcommon.NewMap()
 		minVal := int64(0)
 		maxVal := int64(9223372036854775807) // Max int64
@@ -107,8 +91,9 @@ func TestGrpcService_YANGAwareMethods(t *testing.T) {
 		yangParser.LoadBuiltinModules()
 
 		service := &grpcService{
-			receiver:   receiver,
-			yangParser: yangParser,
+			receiver:      receiver,
+			yangParser:    yangParser,
+			rfcYangParser: NewRFC6020Parser(),
 		}
 
 		metrics := pmetric.NewMetrics()
@@ -154,8 +139,9 @@ func TestGrpcService_ProcessField(t *testing.T) {
 		yangParser.LoadBuiltinModules()
 
 		service := &grpcService{
-			receiver:   receiver,
-			yangParser: yangParser,
+			receiver:      receiver,
+			yangParser:    yangParser,
+			rfcYangParser: NewRFC6020Parser(),
 		}
 
 		metrics := pmetric.NewMetrics()

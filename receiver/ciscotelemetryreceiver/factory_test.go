@@ -15,23 +15,20 @@ func TestNewFactory(t *testing.T) {
 	factory := NewFactory()
 	require.NotNil(t, factory)
 
-	// Verify factory type matches expected type string
 	assert.Equal(t, TypeStr, factory.Type().String())
 
-	// Verify factory can create default config
 	cfg := factory.CreateDefaultConfig()
 	require.NotNil(t, cfg)
 	assert.IsType(t, &Config{}, cfg)
 
-	// Verify factory has metrics receiver creation capability
-	receiver, err := factory.CreateMetrics(
+	rcv, err := factory.CreateMetrics(
 		context.Background(),
 		createTestSettings(),
 		cfg,
 		&consumertest.MetricsSink{},
 	)
 	assert.NoError(t, err)
-	assert.NotNil(t, receiver)
+	assert.NotNil(t, rcv)
 }
 
 func TestCreateDefaultConfig(t *testing.T) {
@@ -41,43 +38,35 @@ func TestCreateDefaultConfig(t *testing.T) {
 	config, ok := cfg.(*Config)
 	require.True(t, ok)
 
-	// Verify default values
 	assert.Equal(t, "0.0.0.0:57500", config.ListenAddress)
-	assert.False(t, config.TLS.Enabled)
-	assert.Equal(t, 4*1024*1024, config.MaxMessageSize)
-	assert.Equal(t, uint32(100), config.MaxConcurrentStreams)
+	assert.Nil(t, config.TLS)
+	assert.Equal(t, 4, config.MaxRecvMsgSizeMiB)
+	assert.Equal(t, uint32(128), config.MaxConcurrentStreams)
 	assert.Equal(t, 30*time.Second, config.KeepAlive.Time)
 	assert.Equal(t, 10*time.Second, config.KeepAlive.Timeout)
 	assert.True(t, config.YANG.EnableRFCParser)
 	assert.True(t, config.YANG.CacheModules)
 	assert.Equal(t, 1000, config.YANG.MaxModules)
 
-	// Validate the default config
 	assert.NoError(t, config.Validate())
 }
 
 func TestCreateMetricsReceiver_ValidConfig(t *testing.T) {
-	ctx := context.Background()
 	cfg := createValidTestConfig()
 	consumer := consumertest.NewNop()
-
-	// Create receiver settings (simplified)
 	settings := createTestSettings()
 
-	receiver, err := createMetricsReceiver(ctx, settings, cfg, consumer)
-
+	rcv, err := createMetricsReceiver(context.Background(), settings, cfg, consumer)
 	require.NoError(t, err)
-	require.NotNil(t, receiver)
+	require.NotNil(t, rcv)
 
-	// Test that receiver can be cast to the expected type
-	ciscoReceiver, ok := receiver.(*ciscoTelemetryReceiver)
+	ciscoReceiver, ok := rcv.(*ciscoTelemetryReceiver)
 	require.True(t, ok)
 	assert.NotNil(t, ciscoReceiver.config)
 	assert.NotNil(t, ciscoReceiver.consumer)
 }
 
 func TestCreateMetricsReceiver_InvalidConfig(t *testing.T) {
-	ctx := context.Background()
 	consumer := consumertest.NewNop()
 	settings := createTestSettings()
 
@@ -90,87 +79,19 @@ func TestCreateMetricsReceiver_InvalidConfig(t *testing.T) {
 			config: &struct{}{},
 		},
 		{
-			name: "invalid_config_values",
+			name: "empty_listen_address",
 			config: &Config{
-				ListenAddress:        "",  // Invalid: empty
-				MaxConcurrentStreams: 100, // Still need this for other validation to pass
+				ListenAddress:        "",
+				MaxConcurrentStreams: 128,
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			receiver, err := createMetricsReceiver(ctx, settings, tt.config, consumer)
-
+			rcv, err := createMetricsReceiver(context.Background(), settings, tt.config, consumer)
 			assert.Error(t, err)
-			assert.Nil(t, receiver)
-		})
-	}
-}
-
-func TestFactory_ConfigValidation(t *testing.T) {
-	ctx := context.Background()
-	consumer := consumertest.NewNop()
-	settings := createTestSettings()
-
-	tests := []struct {
-		name    string
-		modify  func(*Config)
-		wantErr bool
-	}{
-		{
-			name:    "valid_default",
-			modify:  func(c *Config) {},
-			wantErr: false,
-		},
-		{
-			name: "custom_listen_address",
-			modify: func(c *Config) {
-				c.ListenAddress = "127.0.0.1:8080"
-			},
-			wantErr: false,
-		},
-		{
-			name: "enable_tls",
-			modify: func(c *Config) {
-				c.TLS.Enabled = true
-				c.TLS.CertFile = "cert.pem"
-				c.TLS.KeyFile = "key.pem"
-			},
-			wantErr: false,
-		},
-		{
-			name: "invalid_listen_address",
-			modify: func(c *Config) {
-				c.ListenAddress = ""
-			},
-			wantErr: true,
-		},
-		{
-			name: "tls_without_cert",
-			modify: func(c *Config) {
-				c.TLS.Enabled = true
-				c.TLS.KeyFile = "key.pem"
-				// Missing CertFile
-			},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := createValidTestConfig()
-			tt.modify(cfg)
-
-			receiver, err := createMetricsReceiver(ctx, settings, cfg, consumer)
-
-			if tt.wantErr {
-				assert.Error(t, err)
-				assert.Nil(t, receiver)
-			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, receiver)
-			}
+			assert.Nil(t, rcv)
 		})
 	}
 }

@@ -3,7 +3,6 @@ package ciscotelemetryreceiver
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -174,7 +173,7 @@ func (p *YANGParser) LoadBuiltinModules() {
 	p.modules[processCpuModule.Name] = processCpuModule
 	p.modules[ospfModule.Name] = ospfModule
 
-	log.Printf("Loaded %d builtin YANG modules", len(p.modules))
+	// Loaded builtin YANG modules (log removed; use structured logging via caller).
 }
 
 // GetKeyForPath returns the key field name for a given YANG path

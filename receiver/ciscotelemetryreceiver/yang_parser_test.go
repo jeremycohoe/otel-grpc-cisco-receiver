@@ -2,6 +2,7 @@ package ciscotelemetryreceiver
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -108,7 +109,7 @@ func TestYANGParserPersistence(t *testing.T) {
 
 	// Test saving modules to file
 	t.Run("SaveToFile", func(t *testing.T) {
-		filename := "/tmp/yang_modules_test.json"
+		filename := filepath.Join(t.TempDir(), "yang_modules_test.json")
 		err := parser.SaveModulesToFile(filename)
 		assert.NoError(t, err)
 

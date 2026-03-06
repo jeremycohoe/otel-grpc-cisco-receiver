@@ -1,6 +1,7 @@
 package ciscotelemetryreceiver
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -382,7 +383,7 @@ module test-export {
 	}
 
 	// Test save to file
-	tmpFile := "/tmp/test-modules.json"
+	tmpFile := filepath.Join(t.TempDir(), "test-modules.json")
 	err = parser.SaveModules(tmpFile)
 	if err != nil {
 		t.Fatalf("Save modules failed: %v", err)

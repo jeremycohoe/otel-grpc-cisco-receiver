@@ -3,6 +3,7 @@ package ciscotelemetryreceiver
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -24,8 +25,9 @@ type telemetryBuilder struct {
 	processingDuration    metric.Int64Histogram
 	grpcErrors            metric.Int64Counter
 
-	// Internal state tracking
-	activeConnections int64
+	// Internal state tracking (activeConnections is accessed from multiple
+	// goroutines so it must be manipulated atomically).
+	activeConnections atomic.Int64
 	discoveredModules map[string]bool
 	modulesMutex      sync.RWMutex
 }
@@ -169,12 +171,12 @@ func (tb *telemetryBuilder) RecordConnectionOpened(ctx context.Context, clientAd
 		attribute.String("client_addr", clientAddr),
 	}
 
-	tb.activeConnections++
+	newVal := tb.activeConnections.Add(1)
 	tb.connectionsActive.Add(ctx, 1, metric.WithAttributes(attrs...))
 
 	tb.logger.Info("gRPC connection opened",
 		zap.String("client_addr", clientAddr),
-		zap.Int64("total_active", tb.activeConnections))
+		zap.Int64("total_active", newVal))
 }
 
 // RecordConnectionClosed records a closed gRPC connection
@@ -183,12 +185,12 @@ func (tb *telemetryBuilder) RecordConnectionClosed(ctx context.Context, clientAd
 		attribute.String("client_addr", clientAddr),
 	}
 
-	tb.activeConnections--
+	newVal := tb.activeConnections.Add(-1)
 	tb.connectionsActive.Add(ctx, -1, metric.WithAttributes(attrs...))
 
 	tb.logger.Info("gRPC connection closed",
 		zap.String("client_addr", clientAddr),
-		zap.Int64("total_active", tb.activeConnections))
+		zap.Int64("total_active", newVal))
 }
 
 // trackYANGModule tracks unique YANG modules discovered
@@ -210,7 +212,7 @@ func (tb *telemetryBuilder) trackYANGModule(ctx context.Context, yangModule stri
 
 // GetActiveConnections returns the current number of active connections
 func (tb *telemetryBuilder) GetActiveConnections() int64 {
-	return tb.activeConnections
+	return tb.activeConnections.Load()
 }
 
 // GetDiscoveredModulesCount returns the number of unique YANG modules discovered
