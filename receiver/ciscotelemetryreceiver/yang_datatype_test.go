@@ -67,7 +67,7 @@ func TestYANGDataTypes(t *testing.T) {
 		assert.Equal(t, "percent", dataType.Units)
 		assert.NotNil(t, dataType.Range)
 		assert.Equal(t, int64(0), *dataType.Range.Min)
-		assert.Equal(t, int64(255), *dataType.Range.Max)
+		assert.Equal(t, int64(100), *dataType.Range.Max)
 
 		t.Logf("CPU five-seconds: Type=%s, Units=%s, Range=%d-%d",
 			dataType.Type, dataType.Units, *dataType.Range.Min, *dataType.Range.Max)

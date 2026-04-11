@@ -1,0 +1,685 @@
+<dashboard version="1.1" theme="dark">
+  <label>Cisco IOS XE - Model Driven Telemetry</label>
+  <description>MDT via OTEL Collector — YANG Operational Models (metrics index)</description>
+
+  <fieldset submitButton="false" autoRun="true">
+    <input type="dropdown" token="switch_node" searchWhenChanged="true">
+      <label>Switch</label>
+      <choice value="*">All Switches</choice>
+      <default>*</default>
+      <search>
+        <query>| mstats count("cisco.content.five-seconds") as c WHERE index=cisco_mdt BY cisco.node_id | rename cisco.node_id as node | fields node | sort node</query>
+        <earliest>-4h@m</earliest>
+        <latest>now</latest>
+      </search>
+      <fieldForLabel>node</fieldForLabel>
+      <fieldForValue>node</fieldForValue>
+    </input>
+    <input type="time" token="time_range">
+      <label>Time Range</label>
+      <default>
+        <earliest>-4h@m</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+  </fieldset>
+
+  <!-- ==================== ROW 0: Device Overview ==================== -->
+  <row>
+    <panel>
+      <title>Device Overview — Uptime, Version, Hardware</title>
+      <table>
+        <search>
+          <query>| mstats latest("cisco.content.device-system-data.current-time_info") as ct latest("cisco.content.device-system-data.boot-time_info") as bt latest("cisco.content.device-system-data.software-version_info") as sv latest("cisco.content.device-system-data.rommon-version_info") as rv latest("cisco.content.device-system-data.last-reboot-reason_info") as rr WHERE index=cisco_mdt cisco.node_id="$switch_node$" cisco.encoding_path="Cisco-IOS-XE-device-hardware-oper*" BY cisco.node_id
+| rename cisco.node_id as Switch
+| eval "Software Version"=coalesce(sv, "-"), "ROMMON"=coalesce(rv, "-"), "Boot Time"=coalesce(bt, "-"), "Reboot Reason"=coalesce(rr, "-")
+| table Switch "Software Version" "Boot Time" "Reboot Reason" "ROMMON"
+| sort Switch
+| appendpipe [| stats count | where count=0 | eval Switch="Waiting for device-hardware data...", "Software Version"="-", "Boot Time"="-", "Reboot Reason"="-", "ROMMON"="-"]</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">10</option>
+      </table>
+    </panel>
+    <panel>
+      <title>Hardware Inventory</title>
+      <table>
+        <search>
+          <query>| mstats latest("cisco.content.device-inventory.hw-description_info") as desc latest("cisco.content.device-inventory.part-number_info") as pn latest("cisco.content.device-inventory.serial-number_info") as sn latest("cisco.content.device-inventory.version_info") as ver WHERE index=cisco_mdt cisco.node_id="$switch_node$" cisco.encoding_path="Cisco-IOS-XE-device-hardware-oper*" BY cisco.node_id cisco.keys.hw-type cisco.keys.hw-dev-index
+| rename cisco.node_id as Switch cisco.keys.hw-type as "HW Type" cisco.keys.hw-dev-index as "Index"
+| eval Description=coalesce(desc, "-"), "Part Number"=coalesce(pn, "-"), "Serial Number"=coalesce(sn, "-"), Version=coalesce(ver, "-")
+| table Switch "HW Type" Description "Part Number" "Serial Number" Version
+| sort Switch "HW Type"
+| appendpipe [| stats count | where count=0 | eval Switch="Waiting for hardware inventory data...", "HW Type"="-", Description="-", "Part Number"="-", "Serial Number"="-", Version="-"]</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">20</option>
+      </table>
+    </panel>
+  </row>
+
+  <!-- ==================== ROW 1: CPU Utilization ==================== -->
+  <row>
+    <panel>
+      <title>CPU Utilization (Over Time)</title>
+      <chart>
+        <search>
+          <query>| mstats avg("cisco.content.five-seconds") as "5 Sec" avg("cisco.content.one-minute") as "1 Min" avg("cisco.content.five-minutes") as "5 Min" WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY cisco.node_id span=5m</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="charting.axisTitleX.text">Time</option>
+        <option name="charting.axisTitleY.text">CPU %</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>CPU Utilization (Current)</title>
+      <single>
+        <search>
+          <query>| mstats latest("cisco.content.five-seconds") as cpu_5sec WHERE index=cisco_mdt cisco.node_id="$switch_node$" span=5m
+| tail 1</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xf1813f","0xdc4e41"]</option>
+        <option name="rangeValues">[50,75,90]</option>
+        <option name="useColors">1</option>
+        <option name="unit">%</option>
+        <option name="underLabel">5-Second CPU</option>
+      </single>
+    </panel>
+  </row>
+
+  <!-- ==================== ROW 2: Process Memory ==================== -->
+  <row>
+    <panel>
+      <title>Top 10 Processes by Memory (Holding)</title>
+      <chart>
+        <search>
+          <query>| mstats latest("cisco.content.holding-memory") as holding_memory WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY name
+| eval holding_memory_mb = round(holding_memory / 1048576, 2)
+| sort -holding_memory_mb
+| head 10
+| rename name as "Process"
+| fields Process holding_memory_mb</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.axisTitleX.text">Process</option>
+        <option name="charting.axisTitleY.text">Holding Memory (MB)</option>
+        <option name="charting.legend.placement">none</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>Process Memory: Allocated vs Freed (Top 5)</title>
+      <chart>
+        <search>
+          <query>| mstats latest("cisco.content.allocated-memory") as allocated latest("cisco.content.freed-memory") as freed WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY name span=5m
+| eval "Allocated (GB)" = round(allocated / 1073741824, 2)
+| eval "Freed (GB)" = round(freed / 1073741824, 2)
+| fields _time name "Allocated (GB)" "Freed (GB)"
+| sort -"Allocated (GB)"
+| rename name as "Process"</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="charting.axisTitleY.text">Memory (GB)</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+  </row>
+
+  <!-- ==================== ROW 3: Environment Sensors ==================== -->
+  <row>
+    <panel>
+      <title>Environment Sensor Readings</title>
+      <chart>
+        <search>
+          <query>| mstats avg("cisco.content.environment-sensor.current-reading") as reading WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY name span=5m
+| where isnotnull(reading)
+| rename name as sensor
+| timechart span=5m avg(reading) by sensor</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="charting.axisTitleY.text">Reading</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>Environment Sensor Status</title>
+      <table>
+        <search>
+          <query>| mstats latest("cisco.content.environment-sensor.current-reading") as "Reading" latest("cisco.content.environment-sensor.name_info") as dummy WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY name cisco.node_id
+| rename name as "Sensor"
+| where isnotnull(Reading)
+| sort Sensor</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+
+  <!-- ==================== ROW 4: Interface Statistics ==================== -->
+  <row>
+    <panel>
+      <title>Interface Throughput (In/Out Octets)</title>
+      <chart>
+        <search>
+          <query>| mstats avg("cisco.content.statistics.in-octets") as in_octets avg("cisco.content.statistics.out-octets") as out_octets WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY name span=5m
+| rename name as intf
+| where intf!="Null0" AND NOT match(intf, "^Loopback")
+| timechart span=5m sum(in_octets) as "In Octets" sum(out_octets) as "Out Octets"</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.axisTitleY.text">Octets</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>Interface Status &amp; Errors</title>
+      <table>
+        <search>
+          <query>| mstats latest("cisco.content.statistics.in-errors") as "In Errors" latest("cisco.content.statistics.out-errors") as "Out Errors" latest("cisco.content.statistics.in-octets") as "In Octets" latest("cisco.content.statistics.out-octets") as "Out Octets" latest("cisco.content.statistics.in-discards") as "In Discards" latest("cisco.content.speed") as "Speed" WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY name
+| rename name as "Interface"
+| where isnotnull(Speed) AND Interface!="Null0"
+| sort Interface</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">20</option>
+      </table>
+    </panel>
+  </row>
+
+  <!-- ==================== ROW 5: Interface Rate ==================== -->
+  <row>
+    <panel>
+      <title>Interface Rx/Tx Rate (kbps)</title>
+      <chart>
+        <search>
+          <query>| mstats avg("cisco.content.statistics.rx-kbps") as rx avg("cisco.content.statistics.tx-kbps") as tx WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY name span=5m
+| rename name as intf
+| where (rx > 0 OR tx > 0) AND intf!="Null0"
+| timechart span=5m avg(rx) as "Rx kbps" avg(tx) as "Tx kbps" by intf</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="charting.axisTitleY.text">kbps</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>Interface Packet Rate (pps)</title>
+      <chart>
+        <search>
+          <query>| mstats avg("cisco.content.statistics.rx-pps") as rx avg("cisco.content.statistics.tx-pps") as tx WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY name span=5m
+| rename name as intf
+| where (rx > 0 OR tx > 0) AND intf!="Null0"
+| timechart span=5m avg(rx) as "Rx pps" avg(tx) as "Tx pps" by intf</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="charting.axisTitleY.text">Packets/sec</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+  </row>
+
+  <!-- ==================== ROW 6: ARP + CDP ==================== -->
+  <row>
+    <panel>
+      <title>ARP Table</title>
+      <table>
+        <search>
+          <query>| mstats latest("cisco.content.arp-entry.address_info") as addr WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY vrf value cisco.node_id
+| rename value as "IP Address" vrf as "VRF" cisco.node_id as "Switch"
+| append [| mstats latest("cisco.content.arp-entry.hardware_info") as hw WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY vrf value cisco.node_id | rename value as "MAC" vrf as "VRF" cisco.node_id as "Switch"]
+| append [| mstats latest("cisco.content.arp-entry.interface_info") as intf WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY vrf value cisco.node_id | rename value as "Interface" vrf as "VRF" cisco.node_id as "Switch"]
+| stats values("IP Address") as "IP Address" values("MAC") as "MAC" values("Interface") as "Interface" BY VRF Switch
+| sort VRF</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">20</option>
+      </table>
+    </panel>
+    <panel>
+      <title>CDP Neighbors</title>
+      <table>
+        <search>
+          <query>| mstats latest("cisco.content.power") as "Power (mW)" latest("cisco.content.platform-name_info") as p latest("cisco.content.local-intf-name_info") as l latest("cisco.content.port-id_info") as pid WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY device-id cisco.node_id
+| rename device-id as "Neighbor" cisco.node_id as "Switch"
+| where isnotnull(Neighbor)
+| sort Neighbor</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+
+  <!-- ==================== ROW 7: MATM + LLDP ==================== -->
+  <row>
+    <panel>
+      <title>MAC Address Table (MATM)</title>
+      <table>
+        <search>
+          <query>| mstats latest("cisco.content.matm-mac-entry.mac_info") as m WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY table-type value cisco.node_id
+| rename value as "MAC Address" table-type as "Table Type" cisco.node_id as "Switch"
+| where isnotnull('MAC Address')
+| sort "Table Type" "MAC Address"</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">20</option>
+      </table>
+    </panel>
+    <panel>
+      <title>LLDP Status</title>
+      <table>
+        <search>
+          <query>| mstats latest("cisco.content.lldp-state-details.enabled") as "Enabled" latest("cisco.content.lldp-state-details.frame-in") as "Frames In" latest("cisco.content.lldp-state-details.frame-out") as "Frames Out" latest("cisco.content.lldp-state-details.entries-aged-out") as "Aged Out" latest("cisco.content.lldp-state-details.frame-error-in") as "Frame Errors" WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY cisco.node_id
+| rename cisco.node_id as "Switch"
+| where isnotnull(Enabled)
+| sort Switch</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+
+  <!-- ==================== ROW 8: Platform Components ==================== -->
+  <row>
+    <panel>
+      <title>Platform Component Temperature</title>
+      <chart>
+        <search>
+          <query>| mstats avg("cisco.content.state.temp.temp-instant") as temp WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY cname span=5m
+| rename cname as component
+| where isnotnull(temp) AND temp > 0
+| timechart span=5m avg(temp) by component</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="charting.axisTitleY.text">Temperature (mC)</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>Platform Components Inventory</title>
+      <table>
+        <search>
+          <query>| mstats latest("cisco.content.state.temp.temp-instant") as "Temp" WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY cname cisco.node_id
+| rename cname as "Component"
+| where isnotnull(Component)
+| sort Component</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+
+  <!-- ==================== ROW 9: MDT Subscription Health ==================== -->
+  <row>
+    <panel>
+      <title>MDT Subscription Health</title>
+      <table>
+        <search>
+          <query>| mstats latest("cisco.content.base.period") as "Period (cs)" WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY subscription-id cisco.node_id
+| rename subscription-id as "Sub ID"
+| where isnotnull('Sub ID')
+| sort "Sub ID"</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+    <panel>
+      <title>Telemetry Data Volume Over Time</title>
+      <chart>
+        <search>
+          <query>| mstats count WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY cisco.encoding_path span=5m
+| rename cisco.encoding_path as model
+| timechart span=5m sum(count) by model</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.axisTitleY.text">Data Points</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+  </row>
+
+  <!-- ==================== ROW 10: PoE Power ==================== -->
+  <row>
+    <panel>
+      <title>PoE Power Budget</title>
+      <single>
+        <search>
+          <query>| mstats latest("cisco.content.consumed-poe-power") as consumed latest("cisco.content.power-budget") as budget WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY cisco.node_id
+| eval pct = round(consumed / budget * 100, 1)
+| fields pct
+| head 1</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xf1813f","0xdc4e41"]</option>
+        <option name="rangeValues">[50,75,90]</option>
+        <option name="useColors">1</option>
+        <option name="unit">%</option>
+        <option name="underLabel">PoE Utilization</option>
+      </single>
+    </panel>
+    <panel>
+      <title>PoE Power Summary</title>
+      <table>
+        <search>
+          <query>| mstats latest("cisco.content.consumed-poe-power") as "Consumed (W)" latest("cisco.content.power-budget") as "Budget (W)" latest("cisco.content.unused-power") as "Unused (W)" latest("cisco.content.total-power") as "Total (W)" latest("cisco.content.rsvd-power") as "Reserved (W)" latest("cisco.content.alloc-power") as "Allocated (W)" latest("cisco.content.num-ps") as "Power Supplies" WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY cisco.node_id
+| rename cisco.node_id as "Switch"
+| sort Switch</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+
+  <!-- ==================== ROW 11: Per-Process CPU ==================== -->
+  <row>
+    <panel>
+      <title>Top 10 Processes by CPU (5-Second Avg)</title>
+      <chart>
+        <search>
+          <query>| mstats latest("cisco.content.cpu-usage-processes.cpu-usage-process.five-seconds") as cpu WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY name
+| sort -cpu
+| head 10
+| rename name as "Process"
+| fields Process cpu</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.axisTitleY.text">CPU %</option>
+        <option name="charting.legend.placement">none</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>Per-Process CPU Over Time (Top 5)</title>
+      <chart>
+        <search>
+          <query>| mstats avg("cisco.content.cpu-usage-processes.cpu-usage-process.five-seconds") as cpu WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY name span=5m
+| rename name as process
+| timechart span=5m avg(cpu) by process limit=5</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="charting.axisTitleY.text">CPU %</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+  </row>
+
+  <!-- ==================== ROW 12: System DRAM Memory ==================== -->
+  <row>
+    <panel>
+      <title>System DRAM Usage (%)</title>
+      <chart>
+        <search>
+          <query>| mstats avg("cisco.content.memory-stats.used-percent") as used avg("cisco.content.memory-stats.free-percent") as free WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY cisco.node_id span=5m
+| timechart span=5m avg(used) as "Used %" avg(free) as "Free %" by cisco.node_id</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="charting.axisTitleY.text">Percent</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>System DRAM Summary</title>
+      <table>
+        <search>
+          <query>| mstats latest("cisco.content.memory-stats.used-percent") as "Used %" latest("cisco.content.memory-stats.total") as total_kb latest("cisco.content.memory-stats.free-number") as free_kb latest("cisco.content.memory-stats.used-number") as used_kb latest("cisco.content.memory-stats.committed-percent") as "Committed %" WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY fru cisco.node_id
+| eval "Total (GB)" = round(total_kb / 1048576, 2)
+| eval "Used (GB)" = round(used_kb / 1048576, 2)
+| eval "Free (GB)" = round(free_kb / 1048576, 2)
+| rename fru as "FRU" cisco.node_id as "Switch"
+| fields Switch FRU "Used %" "Total (GB)" "Used (GB)" "Free (GB)" "Committed %"</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+
+  <!-- ==================== ROW 13: Spanning Tree ==================== -->
+  <row>
+    <panel>
+      <title>STP Topology Changes Over Time</title>
+      <chart>
+        <search>
+          <query>| mstats avg("cisco.content.stp-detail.topology-changes") as changes WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY instance span=5m
+| timechart span=5m avg(changes) by instance</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="charting.axisTitleY.text">Topology Changes</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>STP Root Bridge per VLAN</title>
+      <table>
+        <search>
+          <query>| mstats latest("cisco.content.stp-detail.root-cost") as "Root Cost" latest("cisco.content.stp-detail.designated-root-priority") as "Root Priority" latest("cisco.content.stp-detail.topology-changes") as "Topo Changes" latest("cisco.content.stp-detail.bridge-priority") as "Bridge Priority" WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY instance cisco.node_id
+| rename instance as "STP Instance" cisco.node_id as "Switch"
+| sort "STP Instance"</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+
+  <!-- ==================== ROW 14: Stack Health ==================== -->
+  <row>
+    <panel>
+      <title>Stack Member Status</title>
+      <table>
+        <search>
+          <query>| mstats latest("cisco.content.stack-node.chassis-number") as "Chassis" latest("cisco.content.stack-node.latency") as "Latency" latest("cisco.content.stack-node.interface-mtu") as "MTU" latest("cisco.content.stack-node.mac-persistency-wait-time") as "MAC Persist Wait" WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY chassis-number cisco.node_id
+| rename chassis-number as "Chassis #" cisco.node_id as "Switch"
+| sort "Chassis #"</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+    <panel>
+      <title>Stack Keepalive Counters</title>
+      <chart>
+        <search>
+          <query>| mstats avg("cisco.content.stack-node.keepalive-counters.sent") as sent avg("cisco.content.stack-node.keepalive-counters.received") as recv avg("cisco.content.stack-node.keepalive-counters.sent-failure") as fail WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY chassis-number span=5m
+| timechart span=5m avg(sent) as "Sent" avg(recv) as "Received" avg(fail) as "Failures"</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="charting.axisTitleY.text">Count</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+  </row>
+
+  <!-- ==================== ROW 15: VLANs ==================== -->
+  <row>
+    <panel>
+      <title>VLAN Inventory</title>
+      <table>
+        <search>
+          <query>| mstats latest("cisco.content.vlan-interfaces.subinterface") as "Subinterfaces" WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY id cisco.node_id
+| rename id as "VLAN ID" cisco.node_id as "Switch"
+| sort 0 "VLAN ID"</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">20</option>
+      </table>
+    </panel>
+    <panel>
+      <title>802.1X / Identity (EAPOL Stats)</title>
+      <table>
+        <search>
+          <query>| mstats latest("cisco.content.dot1x-global-stats.eapol-rx") as "EAPOL Rx" latest("cisco.content.dot1x-global-stats.eapol-tx") as "EAPOL Tx" latest("cisco.content.dot1x-global-stats.eapol-rx-start") as "Rx Start" latest("cisco.content.dot1x-global-stats.eapol-rx-logoff") as "Rx Logoff" latest("cisco.content.dot1x-global-stats.eapol-rx-resp-id") as "Rx Resp-ID" latest("cisco.content.dot1x-global-stats.eapol-rx-resp") as "Rx Resp" latest("cisco.content.dot1x-global-stats.eapol-rx-invalid") as "Rx Invalid" WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY cisco.node_id
+| rename cisco.node_id as "Switch"</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+
+  <!-- ==================== ROW 16: Switchport + Transceiver ==================== -->
+  <row>
+    <panel>
+      <title>Switchport Details</title>
+      <table>
+        <search>
+          <query>| mstats latest("cisco.content.port-details.access-mode-id") as "Access VLAN" WHERE index=cisco_mdt cisco.node_id="$switch_node$" BY cisco.node_id
+| join type=left cisco.node_id [| mstats count WHERE index=cisco_mdt cisco.node_id="$switch_node$" cisco.encoding_path="Cisco-IOS-XE-switchport-oper*" BY cisco.node_id | rename count as "Data Points"]
+| rename cisco.node_id as "Switch"</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">20</option>
+      </table>
+    </panel>
+    <panel>
+      <title>Transceiver / UDLD Status</title>
+      <table>
+        <search>
+          <query>| mstats count WHERE index=cisco_mdt cisco.node_id="$switch_node$" (cisco.encoding_path="Cisco-IOS-XE-transceiver-oper*" OR cisco.encoding_path="Cisco-IOS-XE-udld-oper*") BY cisco.encoding_path cisco.node_id
+| rename cisco.encoding_path as "Model" cisco.node_id as "Switch" count as "Data Points"
+| sort Model
+| appendpipe [| stats count | where count=0 | eval Model="No transceiver/UDLD data yet", Switch="-", "Data Points"=0]</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+
+  <!-- ==================== ROW 17: Software Install ==================== -->
+  <row>
+    <panel>
+      <title>Software Install Packages</title>
+      <table>
+        <search>
+          <query>| mstats latest("cisco.content.install-packages.pkg-state_info") as state_val WHERE index=cisco_mdt cisco.node_id="$switch_node$" cisco.encoding_path="Cisco-IOS-XE-install-oper*" BY cisco.node_id cisco.keys.fru cisco.content.install-packages.pkg-name_info.value cisco.content.install-packages.pkg-version_info.value
+| rename cisco.node_id as Switch cisco.keys.fru as FRU "cisco.content.install-packages.pkg-name_info.value" as "Package" "cisco.content.install-packages.pkg-version_info.value" as "Version"
+| eval Status=case(state_val==1, "Active", state_val==2, "Inactive", 1==1, state_val)
+| table Switch FRU Package Version Status
+| sort Switch Package
+| appendpipe [| stats count | where count=0 | eval Switch="Waiting for install data...", FRU="-", Package="-", Version="-", Status="-"]</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">20</option>
+      </table>
+    </panel>
+    <panel>
+      <title>Install Data Points by Switch</title>
+      <table>
+        <search>
+          <query>| mstats count WHERE index=cisco_mdt cisco.node_id="$switch_node$" cisco.encoding_path="Cisco-IOS-XE-install-oper*" BY cisco.node_id
+| rename cisco.node_id as Switch count as "Data Points"
+| sort Switch
+| appendpipe [| stats count | where count=0 | eval Switch="No install-oper data yet", "Data Points"=0]</query>
+          <earliest>-30m@m</earliest>
+          <latest>$time_range.latest$</latest>
+          <refresh>5m</refresh>
+        </search>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+
+</dashboard>

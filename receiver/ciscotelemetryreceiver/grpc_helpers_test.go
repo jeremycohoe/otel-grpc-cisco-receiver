@@ -111,14 +111,14 @@ func TestGrpcService_YANGAwareMethods(t *testing.T) {
 
 		// Test createYANGAwareMetric method (0% coverage)
 		yangMetric := scopeMetrics.Metrics().AppendEmpty()
-		service.createYANGAwareMetric(yangMetric, "yang_gauge", "/test/path", 789.12, timestamp, yangDataType)
+		service.createYANGAwareMetric(yangMetric, "yang_gauge", "/test/path", 789.12, timestamp, yangDataType, nil)
 
 		assert.Contains(t, yangMetric.Name(), "yang_gauge") // Has cisco. prefix
 		assert.Equal(t, pmetric.MetricTypeGauge, yangMetric.Type())
 
 		// Test createYANGAwareInfoMetric method (0% coverage)
 		yangInfoMetric := scopeMetrics.Metrics().AppendEmpty()
-		service.createYANGAwareInfoMetric(yangInfoMetric, "yang_info", "/test/path", "yang_value", timestamp, yangDataType)
+		service.createYANGAwareInfoMetric(yangInfoMetric, "yang_info", "/test/path", "yang_value", timestamp, yangDataType, nil)
 
 		assert.Contains(t, yangInfoMetric.Name(), "yang_info") // Has cisco. prefix and _info suffix
 		assert.Equal(t, pmetric.MetricTypeGauge, yangInfoMetric.Type())
@@ -172,7 +172,7 @@ func TestGrpcService_ProcessField(t *testing.T) {
 		}
 
 		for _, field := range fields {
-			service.processField(scopeMetrics, field, "/base/path", "/prefix", timestamp)
+			service.processField(scopeMetrics, field, "/base/path", "/prefix", timestamp, nil)
 		}
 
 		// Should have created metrics for each field

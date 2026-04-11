@@ -178,6 +178,13 @@ func (s *grpcService) convertToOTELMetrics(telemetry *pb.Telemetry) pmetric.Metr
 	}
 	resourceAttrs.PutStr("cisco.encoding_path", telemetry.EncodingPath)
 
+	// Enrichment: add YANG module name and encoding type as resource attributes.
+	yangModule := s.extractYANGModule(telemetry.EncodingPath)
+	if yangModule != "unknown" {
+		resourceAttrs.PutStr("cisco.yang_module", yangModule)
+	}
+	resourceAttrs.PutStr("cisco.encoding", "kvGPB")
+
 	scopeMetrics := resourceMetrics.ScopeMetrics().AppendEmpty()
 	scope := scopeMetrics.Scope()
 	scope.SetName("github.com/jcohoe/otel-grpc-cisco-receiver")
@@ -196,15 +203,119 @@ func (s *grpcService) convertToOTELMetrics(telemetry *pb.Telemetry) pmetric.Metr
 	return metrics
 }
 
-// processKvGPBData processes key-value GPB formatted telemetry data
+// processKvGPBData processes key-value GPB formatted telemetry data.
+// It uses a two-pass approach: first extract YANG list keys from each top-level
+// entry, then process all fields while propagating those keys as attributes on
+// every sibling metric. This allows downstream systems (Splunk, Prometheus) to
+// group/filter metrics by entity (interface name, process name, sensor name).
 func (s *grpcService) processKvGPBData(scopeMetrics pmetric.ScopeMetrics, telemetry *pb.Telemetry) {
 	timestamp := pcommon.Timestamp(telemetry.MsgTimestamp * 1000000) // Convert milliseconds to nanoseconds
 
+	// Resolve which field names are keys for this encoding path.
+	keyFieldNames := s.resolveKeyFields(telemetry.EncodingPath)
+
 	for _, field := range telemetry.DataGpbkv {
-		s.processField(scopeMetrics, field, telemetry.EncodingPath, "", timestamp)
+		effectiveKeyFields := keyFieldNames
+
+		// If no keys found at the encoding path level, try appending the
+		// field name. This handles cases where the encoding path is a container
+		// and each DataGpbkv entry is a list entry (e.g., encoding_path=
+		// "environment-sensors", field.Name="environment-sensor").
+		if len(effectiveKeyFields) == 0 && field.Name != "" && len(field.Fields) > 0 {
+			childPath := telemetry.EncodingPath + "/" + field.Name
+			effectiveKeyFields = s.resolveKeyFields(childPath)
+		}
+
+		// Pass 1 — collect key values from immediate children of this list entry.
+		listKeys := s.extractListKeys(field, effectiveKeyFields)
+
+		// Pass 2 — process fields, attaching keys to every data point.
+		s.processField(scopeMetrics, field, telemetry.EncodingPath, "", timestamp, listKeys)
 	}
-} // processField recursively processes a telemetry field and creates metrics
-func (s *grpcService) processField(scopeMetrics pmetric.ScopeMetrics, field *pb.TelemetryField, basePath, pathPrefix string, timestamp pcommon.Timestamp) {
+}
+
+// resolveKeyFields returns the set of key field names for an encoding path,
+// consulting both the built-in YANG parser and the RFC parser.
+func (s *grpcService) resolveKeyFields(encodingPath string) map[string]bool {
+	keyNames := make(map[string]bool)
+
+	// Try built-in YANG parser first
+	analysis := s.yangParser.AnalyzeEncodingPath(encodingPath)
+	if analysis != nil {
+		for _, keyName := range analysis.Keys {
+			keyNames[keyName] = true
+		}
+		// Also look up the ListKeys directly by module
+		moduleName := analysis.ModuleName
+		listPath := analysis.ListPath
+		if keys := s.yangParser.GetKeysForList(moduleName, listPath); len(keys) > 0 {
+			for _, k := range keys {
+				keyNames[k] = true
+			}
+		}
+	}
+
+	// Supplement with RFC parser
+	if s.rfcYangParser != nil {
+		rfcAnalysis := s.rfcYangParser.AnalyzeTelemetryPath(encodingPath)
+		if rfcAnalysis != nil && rfcAnalysis.IsValid {
+			for _, k := range rfcAnalysis.ListKeys {
+				keyNames[k] = true
+			}
+		}
+	}
+
+	return keyNames
+}
+
+// extractListKeys scans a kvGPB list entry for key values.
+// In Cisco kvGPB, each list row has two top-level children: "keys" and "content".
+// The actual key fields (e.g., "name") are nested inside the "keys" child.
+// This function looks both at direct children AND inside a "keys" sub-field.
+func (s *grpcService) extractListKeys(field *pb.TelemetryField, keyFieldNames map[string]bool) map[string]string {
+	keys := make(map[string]string)
+
+	for _, child := range field.Fields {
+		// Case 1: The child IS a known key field (flat structure).
+		if keyFieldNames[child.Name] {
+			s.extractKeyValue(child, keys)
+			continue
+		}
+
+		// Case 2: The child is the "keys" container — dig inside it.
+		if child.Name == "keys" {
+			for _, keyChild := range child.Fields {
+				if keyFieldNames[keyChild.Name] {
+					s.extractKeyValue(keyChild, keys)
+				}
+			}
+		}
+	}
+
+	return keys
+}
+
+// extractKeyValue reads the typed value of a TelemetryField and stores it in
+// the keys map under the field's name.
+func (s *grpcService) extractKeyValue(field *pb.TelemetryField, keys map[string]string) {
+	switch v := field.ValueByType.(type) {
+	case *pb.TelemetryField_StringValue:
+		keys[field.Name] = v.StringValue
+	case *pb.TelemetryField_Uint32Value:
+		keys[field.Name] = fmt.Sprintf("%d", v.Uint32Value)
+	case *pb.TelemetryField_Uint64Value:
+		keys[field.Name] = fmt.Sprintf("%d", v.Uint64Value)
+	case *pb.TelemetryField_Sint32Value:
+		keys[field.Name] = fmt.Sprintf("%d", v.Sint32Value)
+	case *pb.TelemetryField_Sint64Value:
+		keys[field.Name] = fmt.Sprintf("%d", v.Sint64Value)
+	}
+}
+
+// processField recursively processes a telemetry field and creates metrics.
+// listKeys carries the YANG list key values extracted from the parent entry so
+// they can be attached as attributes on every sibling metric.
+func (s *grpcService) processField(scopeMetrics pmetric.ScopeMetrics, field *pb.TelemetryField, basePath, pathPrefix string, timestamp pcommon.Timestamp, listKeys map[string]string) {
 	currentPath := pathPrefix
 	if currentPath != "" {
 		currentPath += "."
@@ -221,26 +332,26 @@ func (s *grpcService) processField(scopeMetrics pmetric.ScopeMetrics, field *pb.
 
 		switch value := field.ValueByType.(type) {
 		case *pb.TelemetryField_Uint32Value:
-			s.createYANGAwareMetric(metric, currentPath, basePath, float64(value.Uint32Value), timestamp, yangDataType)
+			s.createYANGAwareMetric(metric, currentPath, basePath, float64(value.Uint32Value), timestamp, yangDataType, listKeys)
 		case *pb.TelemetryField_Uint64Value:
-			s.createYANGAwareMetric(metric, currentPath, basePath, float64(value.Uint64Value), timestamp, yangDataType)
+			s.createYANGAwareMetric(metric, currentPath, basePath, float64(value.Uint64Value), timestamp, yangDataType, listKeys)
 		case *pb.TelemetryField_Sint32Value:
-			s.createYANGAwareMetric(metric, currentPath, basePath, float64(value.Sint32Value), timestamp, yangDataType)
+			s.createYANGAwareMetric(metric, currentPath, basePath, float64(value.Sint32Value), timestamp, yangDataType, listKeys)
 		case *pb.TelemetryField_Sint64Value:
-			s.createYANGAwareMetric(metric, currentPath, basePath, float64(value.Sint64Value), timestamp, yangDataType)
+			s.createYANGAwareMetric(metric, currentPath, basePath, float64(value.Sint64Value), timestamp, yangDataType, listKeys)
 		case *pb.TelemetryField_DoubleValue:
-			s.createYANGAwareMetric(metric, currentPath, basePath, value.DoubleValue, timestamp, yangDataType)
+			s.createYANGAwareMetric(metric, currentPath, basePath, value.DoubleValue, timestamp, yangDataType, listKeys)
 		case *pb.TelemetryField_FloatValue:
-			s.createYANGAwareMetric(metric, currentPath, basePath, float64(value.FloatValue), timestamp, yangDataType)
+			s.createYANGAwareMetric(metric, currentPath, basePath, float64(value.FloatValue), timestamp, yangDataType, listKeys)
 		case *pb.TelemetryField_BoolValue:
 			val := 0.0
 			if value.BoolValue {
 				val = 1.0
 			}
-			s.createYANGAwareMetric(metric, currentPath, basePath, val, timestamp, yangDataType)
+			s.createYANGAwareMetric(metric, currentPath, basePath, val, timestamp, yangDataType, listKeys)
 		case *pb.TelemetryField_StringValue:
 			// For string values, create YANG-aware info metric
-			s.createYANGAwareInfoMetric(metric, currentPath, basePath, value.StringValue, timestamp, yangDataType)
+			s.createYANGAwareInfoMetric(metric, currentPath, basePath, value.StringValue, timestamp, yangDataType, listKeys)
 		default:
 			// Remove the metric we added if we can't handle the type
 			scopeMetrics.Metrics().RemoveIf(func(m pmetric.Metric) bool {
@@ -249,9 +360,34 @@ func (s *grpcService) processField(scopeMetrics pmetric.ScopeMetrics, field *pb.
 		}
 	}
 
-	// Process nested fields recursively
+	// Process nested fields recursively, propagating list keys.
+	// For each child, check if it's a nested list entry with its own keys.
 	for _, nestedField := range field.Fields {
-		s.processField(scopeMetrics, nestedField, basePath, currentPath, timestamp)
+		nestedKeys := listKeys
+
+		// If this child is a container (has children, no value), check whether
+		// it's a YANG list entry with known keys. This handles deeply nested
+		// lists like cpu-usage-processes/cpu-usage-process and arp-vrf/arp-oper.
+		if len(nestedField.Fields) > 0 && nestedField.ValueByType == nil {
+			candidatePath := s.buildChildEncodingPath(basePath, currentPath, nestedField.Name)
+			childKeyNames := s.resolveKeyFields(candidatePath)
+			if len(childKeyNames) > 0 {
+				extracted := s.extractListKeys(nestedField, childKeyNames)
+				if len(extracted) > 0 {
+					// Merge parent keys with child keys
+					merged := make(map[string]string, len(listKeys)+len(extracted))
+					for k, v := range listKeys {
+						merged[k] = v
+					}
+					for k, v := range extracted {
+						merged[k] = v
+					}
+					nestedKeys = merged
+				}
+			}
+		}
+
+		s.processField(scopeMetrics, nestedField, basePath, currentPath, timestamp, nestedKeys)
 	}
 }
 
@@ -261,6 +397,36 @@ func (s *grpcService) processGPBTableData(scopeMetrics pmetric.ScopeMetrics, tel
 	// This is a placeholder implementation
 	s.receiver.settings.Logger.Debug("GPB table data processing not implemented",
 		zap.String("encoding_path", telemetry.EncodingPath))
+}
+
+// buildChildEncodingPath constructs an encoding path for a nested field by
+// combining the base encoding path with the dotted path prefix and child name.
+// kvGPB uses "keys" and "content" structural wrappers that are not part of
+// the YANG path, so those segments are stripped from the prefix.
+func (s *grpcService) buildChildEncodingPath(basePath, dottedPrefix, childName string) string {
+	parts := strings.SplitN(basePath, ":", 2)
+	if len(parts) != 2 {
+		return basePath + "/" + childName
+	}
+	module := parts[0]
+	path := parts[1]
+
+	if dottedPrefix != "" {
+		// Strip kvGPB structural wrappers from the path
+		segments := strings.Split(dottedPrefix, ".")
+		filtered := make([]string, 0, len(segments))
+		for _, seg := range segments {
+			if seg != "keys" && seg != "content" {
+				filtered = append(filtered, seg)
+			}
+		}
+		if len(filtered) > 0 {
+			path += "/" + strings.Join(filtered, "/")
+		}
+	}
+	path += "/" + childName
+
+	return module + ":" + path
 }
 
 // isKeyField checks if a field name is a key field based on YANG analysis
@@ -306,8 +472,10 @@ func (s *grpcService) extractFieldName(metricName string) string {
 	return fieldName
 }
 
-// createYANGAwareMetric creates a metric with YANG data type awareness
-func (s *grpcService) createYANGAwareMetric(metric pmetric.Metric, name, encodingPath string, value float64, timestamp pcommon.Timestamp, yangDataType *YANGDataType) {
+// createYANGAwareMetric creates a metric with YANG data type awareness.
+// listKeys are the parent list's key-value pairs, added as attributes so
+// downstream systems can group by entity (interface, process, sensor, etc.).
+func (s *grpcService) createYANGAwareMetric(metric pmetric.Metric, name, encodingPath string, value float64, timestamp pcommon.Timestamp, yangDataType *YANGDataType, listKeys map[string]string) {
 	// Determine metric name and type based on YANG information
 	metricName := fmt.Sprintf("cisco.%s", name)
 	metricDescription := fmt.Sprintf("Cisco telemetry metric from %s", encodingPath)
@@ -343,7 +511,10 @@ func (s *grpcService) createYANGAwareMetric(metric pmetric.Metric, name, encodin
 		dp.SetDoubleValue(value)
 		dp.SetTimestamp(timestamp)
 
-		// Add attributes
+		// Add YANG list key attributes first, then YANG metadata.
+		for k, v := range listKeys {
+			dp.Attributes().PutStr(k, v)
+		}
 		s.addYANGAttributes(dp.Attributes(), encodingPath, yangDataType, name)
 
 	} else {
@@ -353,13 +524,17 @@ func (s *grpcService) createYANGAwareMetric(metric pmetric.Metric, name, encodin
 		dp.SetDoubleValue(value)
 		dp.SetTimestamp(timestamp)
 
-		// Add attributes
+		// Add YANG list key attributes first, then YANG metadata.
+		for k, v := range listKeys {
+			dp.Attributes().PutStr(k, v)
+		}
 		s.addYANGAttributes(dp.Attributes(), encodingPath, yangDataType, name)
 	}
 }
 
-// createYANGAwareInfoMetric creates an info metric with YANG data type awareness
-func (s *grpcService) createYANGAwareInfoMetric(metric pmetric.Metric, name, encodingPath, value string, timestamp pcommon.Timestamp, yangDataType *YANGDataType) {
+// createYANGAwareInfoMetric creates an info metric with YANG data type awareness.
+// listKeys are the parent list's key-value pairs, added as attributes.
+func (s *grpcService) createYANGAwareInfoMetric(metric pmetric.Metric, name, encodingPath, value string, timestamp pcommon.Timestamp, yangDataType *YANGDataType, listKeys map[string]string) {
 	metricName := fmt.Sprintf("cisco.%s_info", name)
 	metricDescription := fmt.Sprintf("Cisco telemetry info metric from %s", encodingPath)
 
@@ -379,7 +554,10 @@ func (s *grpcService) createYANGAwareInfoMetric(metric pmetric.Metric, name, enc
 	// Add the string value as an attribute
 	dp.Attributes().PutStr("value", value)
 
-	// Add YANG attributes
+	// Add YANG list key attributes, then YANG metadata.
+	for k, v := range listKeys {
+		dp.Attributes().PutStr(k, v)
+	}
 	s.addYANGAttributes(dp.Attributes(), encodingPath, yangDataType, name)
 }
 

@@ -1,12 +1,11 @@
 # OpenTelemetry Collector Configuration for Cisco IOS XE MDT Telemetry
-# This configuration receives Cisco gRPC dial-out telemetry and exports
-# to Splunk HEC, debug console, and OTLP endpoints.
+# Pipeline: C9300X gRPC Dial-Out → OTEL Collector → Splunk HEC
 
 receivers:
   cisco_telemetry:
     listen_address: "0.0.0.0:57500"
     max_recv_msg_size_mib: 4
-    max_concurrent_streams: 100
+    max_concurrent_streams: 128
     keepalive:
       time: 30s
       timeout: 10s
@@ -14,44 +13,32 @@ receivers:
       enable_rfc_parser: true
       cache_modules: true
       max_modules: 1000
-    # Uncomment for mTLS (recommended for production):
-    # tls:
-    #   cert_file: /etc/otel/certs/server.crt
-    #   key_file:  /etc/otel/certs/server.key
-    #   client_ca_file: /etc/otel/certs/ca.crt
 
 processors:
   batch:
-    timeout: 1s
+    timeout: 2s
     send_batch_size: 1024
 
 exporters:
   debug:
-    verbosity: detailed
+    verbosity: basic
 
-  # Splunk HEC exporter – replace with your Splunk details
-  # splunk_hec:
-  #   endpoint: "https://your-splunk-instance:8088/services/collector"
-  #   token: "your-hec-token"
-  #   source: "cisco:mdt"
-  #   sourcetype: "cisco:mdt:grpc"
-  #   index: "cisco_metrics"
-
-  # OTLP exporter – for other OTel-compatible backends
-  # otlp:
-  #   endpoint: "http://localhost:4317"
-  #   tls:
-  #     insecure: true
+  splunk_hec:
+    endpoint: "https://127.0.0.1:8088/services/collector"
+    token: "cisco-mdt-token"
+    source: "cisco:mdt"
+    sourcetype: "cisco:mdt:grpc"
+    index: "cisco_mdt"
+    tls:
+      insecure_skip_verify: true
 
 service:
   pipelines:
     metrics:
       receivers: [cisco_telemetry]
       processors: [batch]
-      exporters: [debug]
+      exporters: [splunk_hec, debug]
 
   telemetry:
     logs:
       level: info
-    metrics:
-      address: localhost:8888
