@@ -36,7 +36,7 @@ for i in $(seq 1 60); do
     curl -sf -k -u admin:"$SPLUNK_PASSWORD" \
       https://localhost:8089/services/data/indexes \
       -d name=cisco_mdt \
-      -d datatype=event >/dev/null 2>&1 && echo "Index cisco_mdt created" || echo "Index may already exist"
+      -d datatype=metric >/dev/null 2>&1 && echo "Index cisco_mdt created" || echo "Index may already exist"
 
     echo "Splunk ready."
     exit 0

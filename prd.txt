@@ -1,0 +1,363 @@
+================================================================================
+  MDT → OTEL → Splunk Pipeline — Project Requirements & Documentation
+  Revision: 2026-04-11 v2.0
+================================================================================
+
+1. PROJECT OVERVIEW
+-------------------
+
+This project builds a complete telemetry pipeline from Cisco IOS XE switches
+to Splunk dashboards using OpenTelemetry as the collection and forwarding layer.
+
+Architecture:
+
+  Cisco IOS XE Switches ──gRPC dial-out (kvGPB)──▶ Custom OTEL Collector ──Splunk HEC──▶ Splunk Enterprise
+
+Key components:
+  - Custom OpenTelemetry Collector with a Cisco MDT gRPC receiver
+  - Splunk Enterprise (Docker) with metrics index and HEC input
+  - IOS XE MDT subscriptions for 21 YANG operational models
+  - Splunk dashboard with 36 panels across 18 rows covering all subscribed data
+
+
+2. REQUIREMENTS
+---------------
+
+R1. Clone and build the custom OTEL collector from:
+    https://github.com/jeremycohoe/otel-grpc-cisco-receiver
+
+R2. Install Splunk Enterprise in Docker with a pre-configured HEC endpoint
+    and cisco_mdt metrics index.
+
+R3. Configure gRPC Dial-Out MDT on Cisco switches to send kvGPB-encoded
+    telemetry to the OTEL collector, which exports to Splunk HEC.
+
+R4. Create Splunk dashboards with visualizations for all 21 IOS XE
+    YANG operational model XPaths (36 panels across 18 rows).
+
+R5. [COMPLETED] Fix the key-value correlation problem: numeric metrics
+    (in-octets, CPU %, memory) must carry their parent list keys
+    (interface name, process name, sensor name) as metric dimensions
+    so Splunk can GROUP BY those keys.
+    Status: Two-pass key extraction implemented in grpc_service.go.
+    Remaining gaps: see §11 (inner list keys, LLDP, PoE per-port).
+
+R6. Document the project with requirements, architecture decisions, and
+    how-to instructions for rebuilding from scratch.
+
+
+3. ARCHITECTURE DECISIONS
+-------------------------
+
+  Decision: gRPC Dial-Out (not Dial-In)
+  Reason:   Switch initiates connection to collector — no firewall holes
+            needed inbound to the switch. Scales to many switches pushing
+            to one collector.
+
+  Decision: kvGPB encoding (not JSON or GPB compact)
+  Reason:   kvGPB provides self-describing key-value pairs that can be
+            decoded without loading YANG schemas at runtime. Each field
+            carries its name and typed value. GPB compact requires
+            compiled .proto files for each model.
+
+  Decision: Splunk metrics index (not events)
+  Reason:   Splunk's mstats/mcatalog commands are optimized for numeric
+            time-series data. Metric dimensions enable GROUP BY on keys
+            like interface name without full-text search.
+
+  Decision: Two-pass key extraction in the receiver
+  Reason:   kvGPB list entries contain "keys" and "content" sub-containers.
+            Pass 1 extracts key fields (interface name, process name, etc.)
+            from the YANG-defined key fields. Pass 2 processes all leaf
+            values, attaching extracted keys as metric attributes/dimensions.
+            This solves the key-value correlation problem.
+
+  Decision: Built-in YANG module definitions (not runtime schema loading)
+  Reason:   Avoids dependency on YANG file distribution. 28 modules are
+            defined in yang_parser.go with their list keys, data types,
+            and semantic classifications (counter vs gauge).
+
+  Decision: Splunk HEC exporter (not OTLP-to-Splunk or Prometheus remote-write)
+  Reason:   Direct HEC integration preserves metric dimensions as Splunk
+            dimensions without transformation. OTLP-to-Splunk requires an
+            additional translation layer; Prometheus remote-write changes
+            metric naming conventions.
+
+  Decision: String values as _info gauge metrics
+  Reason:   String operational data (oper-status, MAC addresses, VRF names)
+            cannot be numeric metrics. They are stored as gauge value=1.0
+            with the string in a "value" attribute dimension. This follows
+            the Prometheus info-metric pattern.
+
+
+4. LAB ENVIRONMENT
+------------------
+
+  *** LAB-ONLY CREDENTIALS — change all passwords and tokens before
+      any non-lab deployment. HEC token is also embedded in
+      collector-config.yaml and start-splunk.sh. ***
+
+  Resource              Address              Credentials
+  ────────              ───────              ───────────
+  Splunk Web UI         http://10.1.1.3:8000   admin / Cisco123
+  Splunk HEC            https://10.1.1.3:8088  Token: cisco-mdt-token
+  Splunk Management     https://10.1.1.3:8089  admin / Cisco123
+  OTEL Collector gRPC   10.1.1.3:57500         —
+  C9300X Switch         10.1.1.5               admin / Cisco123
+  C9300 Switch          10.1.1.55              admin / Cisco123
+  Collector Host        10.1.1.3 (ubuntu24-panda-pod3)
+
+
+5. YANG MODELS SUBSCRIBED (21 XPaths, 28 parser-defined modules)
+-----------------------------------------------------------------
+
+  Sub ID  XPath                                                    Key Dims Available
+  ──────  ─────                                                    ──────────────────
+  101     /arp-ios-xe-oper:arp-data                                vrf
+  102     /cdp-ios-xe-oper:cdp-neighbor-details                    device-id
+  103     /environment-ios-xe-oper:environment-sensors             name, location
+  104     /interfaces-ios-xe-oper:interfaces/interface             name
+  105     /lldp-ios-xe-oper:lldp-entries                           (global only)
+  106     /matm-ios-xe-oper:matm-oper-data                         table-type
+  107     /mdt-oper:mdt-oper-data/mdt-subscriptions                subscription-id
+  108     /platform-ios-xe-oper:components                         cname
+  109     /process-cpu-ios-xe-oper:cpu-usage/cpu-utilization        (singleton + nested: name, pid)
+  110     /process-memory-ios-xe-oper:memory-usage-processes        name, pid
+  111     /platform-sw-ios-xe-oper:.../control-processes            (platform software)
+  112     /poe-ios-xe-oper:poe-oper-data                           module-num
+  113     /stp-ios-xe-oper:stp-details                             (spanning tree)
+  114     /stack-ios-xe-oper:stack-oper-data                       (stack health)
+  115     /identity-ios-xe-oper:identity-oper-data                 (802.1X sessions)
+  116     /switchport-ios-xe-oper:switchport-oper-data              (switchport)
+  117     /udld-ios-xe-oper:udld-oper-data                         (UDLD)
+  118     /xcvr-ios-xe-oper:transceiver-oper-data                  (transceivers)
+  119     /vlan-ios-xe-oper:vlans                                  (VLANs)
+  120     /install-ios-xe-oper:install-oper-data                   (software install)
+  121     /device-hardware-xe-oper:.../device-hardware             (hw inventory)
+
+  Note: Cisco-IOS-XE-device-hardware-oper YANG module may NOT be available
+  on IOS XE 26.01 (C9300X). PoE data comes from the C9300 at 10.1.1.55
+  via poe-ios-xe-oper subscriptions.
+
+  28 YANG modules are defined in yang_parser.go (including bgp-oper,
+  ospf-oper, dhcp-oper, ha-oper, trustsec-oper, etc.) for key/type
+  resolution even when no active subscription targets them.
+
+  All subscriptions use: encode-kvgpb, stream yang-push, protocol grpc-tcp
+  Default interval: 30000 centiseconds (5 minutes)
+
+
+6. DASHBOARD PANELS (36 panels, 18 rows)
+-----------------------------------------
+
+  Row 1:  Device Overview — uptime/version/hardware + hardware inventory table
+  Row 2:  CPU Utilization — line chart (5s/1m/5m over time) + current value
+  Row 3:  Process Memory — top 10 bar chart + allocated vs freed line
+  Row 4:  Environment Sensors — readings line chart + status table
+  Row 5:  Interface Throughput — in/out octets area chart + status/errors table
+  Row 6:  Interface Rate — rx/tx kbps line + rx/tx pps line
+  Row 7:  ARP Table + CDP Neighbors — table views with key dimensions
+  Row 8:  MAC Address Table (MATM) + LLDP Status — table views
+  Row 9:  Platform Component Temperature — line chart + inventory table
+  Row 10: MDT Subscription Health — table + data volume area chart
+  Row 11: PoE Power — power budget + power summary table
+  Row 12: Per-Process CPU — top 10 bar chart + top 5 over time line
+  Row 13: System DRAM Usage — % utilization + DRAM summary
+  Row 14: STP — topology changes over time + root bridge per VLAN
+  Row 15: Stack Health — member status + keepalive counters
+  Row 16: VLANs + 802.1X — VLAN inventory + EAPOL stats
+  Row 17: Switchport + Transceiver — switchport details + UDLD status
+  Row 18: Software Install — packages + data points by switch
+
+
+7. HOW TO DEPLOY FROM SCRATCH
+------------------------------
+
+Prerequisites:
+  - Ubuntu 24.04 (or similar Linux) with Docker installed
+  - Go 1.24+ installed: https://go.dev/dl/
+  - Python 3 with pexpect (for configure-mdt.py): pip3 install pexpect
+  - Network connectivity to Cisco switches on port 57500
+
+  See also: docs/CONFIG.md (full config reference),
+            docs/SECURITY.md (TLS/mTLS setup)
+
+Step 1: Clone the repository
+  git clone https://github.com/jeremycohoe/otel-grpc-cisco-receiver
+  cd otel-grpc-cisco-receiver
+
+Step 2: Start Splunk
+  ./start-splunk.sh
+  # Wait for "Splunk ready" — creates cisco_mdt index automatically
+  # Access web UI at http://<host>:8000 (admin / Cisco123)
+
+Step 3: Build the OTEL Collector
+  # Install the OTEL Collector Builder
+  go install go.opentelemetry.io/collector/cmd/builder@v0.138.0
+
+  # Build the custom collector (from repo root)
+  builder --config=builder-config.yaml
+
+Step 4: Start the OTEL Collector
+  ./start-otel.sh
+  # Or run in background:
+  nohup ./start-otel.sh > /tmp/otel.log 2>&1 &
+
+  Alternative — Docker Compose (replaces Steps 2-4):
+    docker compose up -d
+    # Starts both Splunk and the OTEL collector in containers.
+    # Uses docker-collector-config.yaml for the collector pipeline.
+    # Splunk Web UI at http://<host>:8000, gRPC at 0.0.0.0:57500.
+
+Step 5: Configure switches
+  # Option A: Automated (recommended)
+  python3 configure-mdt.py
+  # Pushes subscriptions 20001-20021 to all switches listed in the script.
+  # Edit SWITCHES, RECEIVER_IP, or INTERVAL at the top of the script.
+
+  # Option B: Manual CLI
+  # Paste the config from c9300x-mdt-subscriptions.cfg (IDs 101-121)
+  # on each IOS XE switch. Adjust the receiver IP address as needed.
+
+  # Note: The two approaches use different subscription ID ranges
+  # (20001+ vs 101+) to avoid conflicts. Pick one approach per switch.
+
+Step 6: Import the dashboard
+  curl -sk -u admin:Cisco123 \
+    https://localhost:8089/servicesNS/admin/search/data/ui/views \
+    -X POST -d name=cisco_mdt_overview \
+    --data-urlencode "eai:data@splunk-dashboards/cisco_mdt_overview.xml"
+
+Step 7: Verify data flow
+  # On the switch:
+  show telemetry ietf subscription all detail
+
+  # In Splunk (search bar):
+  | mcatalog values(metric_name) WHERE index=cisco_mdt | stats count
+
+  # Should see 300+ metric names within 5 minutes of subscription activation
+
+
+8. HOW TO VERIFY THE PIPELINE
+-------------------------------
+
+Check OTEL collector is running:
+  curl http://localhost:13133/  (health check)
+  curl http://localhost:8888/metrics  (self-metrics)
+
+Check Splunk HEC is accepting data:
+  curl -sk https://localhost:8088/services/collector/health
+
+Check switch telemetry status:
+  show telemetry ietf subscription all
+  show telemetry ietf subscription <id> detail
+  show telemetry receiver all
+
+Check OTEL collector logs for errors:
+  tail -100 /tmp/otel.log
+  # Look for: "Failed to decode" (protobuf issues)
+  #           "connection refused" (Splunk HEC down)
+  #           "key extraction" (YANG key correlation problems)
+
+Check data in Splunk:
+  | mstats count WHERE index=cisco_mdt span=5m
+  | mcatalog values(_dims) WHERE index=cisco_mdt metric_name="cisco.content.five-seconds"
+  | mstats latest("cisco.content.five-seconds") WHERE index=cisco_mdt BY cisco.node_id
+
+
+9. KEY ENGINEERING CHANGES MADE
+---------------------------------
+
+The original receiver (github.com/jeremycohoe/otel-grpc-cisco-receiver)
+was modified to solve the key-value correlation problem and improve
+metric quality:
+
+  grpc_service.go changes:
+    - Two-pass kvGPB processing: extractListKeys() then processField() with keys
+    - Nested list detection for models with inner lists (per-process CPU, ARP)
+    - kvGPB wrapper stripping (keys/content containers are protocol artifacts,
+      not part of the YANG path)
+    - resolveKeyFields() consults YANG parser for key field names
+    - All keys propagated as metric attributes (dimensions in Splunk)
+    - Resource attributes: cisco.yang_module, cisco.encoding
+
+  yang_parser.go changes:
+    - 28 built-in YANG module definitions with keys, data types, descriptions
+    - Correct counter vs gauge classification
+    - AnalyzeEncodingPath walks deepest-to-shallowest for best match
+    - IsCounterType excludes memory bytes from counter classification
+
+  collector-config.yaml:
+    - Pipeline: receivers → batch processor → splunk_hec + debug exporters
+    - Splunk HEC with insecure_skip_verify for lab environments
+
+
+10. FILE INVENTORY
+------------------
+
+  otel-grpc-cisco-receiver/            Repository root
+  ├── prd.txt                          This document
+  ├── README.md                        Project overview, quick-start, module table
+  ├── SPLUNK-SETUP.md                  Splunk Docker reference & SPL query examples
+  ├── LICENSE                          Project license
+  ├── go.mod / go.sum                  Go module definition (github.com/jcohoe/...)
+  ├── start-splunk.sh                  Docker Splunk startup with HEC config
+  ├── start-otel.sh                    OTEL Collector startup script
+  ├── configure-mdt.py                 Automated switch MDT config (IDs 20001-20021)
+  ├── c9300x-mdt-subscriptions.cfg     Manual IOS XE MDT subscription CLI (IDs 101-121)
+  ├── builder-config.yaml              OTel Collector Builder manifest (v0.138.0)
+  ├── collector-config.yaml            Runtime pipeline config (bare-metal)
+  ├── docker-collector-config.yaml     Runtime pipeline config (Docker Compose)
+  ├── docker-compose.yaml              Docker Compose for full stack
+  ├── Dockerfile                       Container build for collector
+  ├── build/cisco-otelcol              Compiled collector binary
+  ├── splunk-dashboards/
+  │   └── cisco_mdt_overview.xml       36-panel Splunk dashboard
+  ├── receiver/ciscotelemetryreceiver/
+  │   ├── grpc_service.go              Core gRPC handler + kvGPB processing
+  │   ├── yang_parser.go               Built-in YANG module definitions (28 modules)
+  │   ├── config.go                    Receiver configuration struct
+  │   ├── factory.go                   OTel component factory
+  │   ├── telemetry.go                 Telemetry data structures
+  │   ├── rfc_yang_parser.go           RFC YANG parser
+  │   └── *_test.go                    Unit & integration tests
+  ├── cmd/
+  │   ├── standalone-receiver/         Standalone gRPC listener (no OTEL pipeline)
+  │   ├── test-client/                 Simulated gRPC dial-out client for testing
+  │   └── test-receiver/               Minimal test receiver
+  ├── proto/                           Protobuf schemas + generated Go code
+  ├── docs/
+  │   ├── CONFIG.md                    Full configuration field reference
+  │   └── SECURITY.md                  TLS/mTLS setup (collector + IOS XE switch)
+  ├── examples/
+  │   └── otel-collector-config.yaml   Backend-agnostic starter config template
+  ├── scripts/
+  │   ├── generate-proto.sh            Regenerate protobuf Go code
+  │   └── reviewer-setup.sh            One-command code review verification
+  └── .github/
+      ├── copilot-instructions.md      Workspace-level AI instructions
+      ├── agents/                      Custom Copilot agent definitions
+      └── instructions/
+          └── engineering-plan.instructions.md
+
+
+11. KNOWN LIMITATIONS
+---------------------
+
+  1. Inner list keys not fully propagated for all models. ARP inner-list
+     key (address) and MATM per-entry keys (mac, port) are not dimensions
+     on their content metrics. They are available via the "value" dimension
+     on _info metrics only.
+
+  2. LLDP per-interface details lack key dimensions.
+
+  3. PoE per-port data not available — only switch-level power summary.
+
+  4. String _info metrics cannot be joined with numeric metrics in a
+     single mstats query. Requires append + stats workarounds.
+
+  5. [FIXED] The start-splunk.sh script now creates the cisco_mdt
+     index as datatype=metric.
+
+  6. Cisco-IOS-XE-device-hardware-oper YANG module not available on
+     IOS XE 26.01 (C9300X platform).

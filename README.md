@@ -14,14 +14,14 @@ Cisco IOS XE Switch ──gRPC dial-out (kvGPB)──▶ OTEL Collector (cisco-o
 
 - **gRPC Dial-Out**: Cisco switch initiates the connection (`gRPCMdtDialout.MdtDialout` bidirectional streaming)
 - **kvGPB Decoding**: Decodes key-value Google Protocol Buffer telemetry payloads
-- **YANG Intelligence**: RFC 6020/7950 compliant parser with **27 built-in Cisco IOS XE modules** for semantic type inference, key-value correlation, and counter/gauge classification
+- **YANG Intelligence**: RFC 6020/7950 compliant parser with **28 built-in Cisco IOS XE modules** for semantic type inference, key-value correlation, and counter/gauge classification
 - **Two-Pass Key Propagation**: YANG list keys (interface name, process name, sensor ID, etc.) are automatically attached as attributes on all sibling metrics, enabling `BY interface_name` grouping in Splunk/Prometheus
 - **mTLS / TLS**: Standard OTel `configtls.ServerConfig` — cert files, client CA, min TLS version, reload interval
 - **Internal Observability**: 8 OTel SDK metrics (messages received, bytes, errors, active connections, processing time, YANG cache hits/misses, metrics produced)
 - **Splunk Dashboard**: Pre-built 30-panel Splunk dashboard with multi-switch support
 - **Backend Agnostic**: Works with any OTel Collector exporter
 
-## Supported YANG Modules (27)
+## Supported YANG Modules (28)
 
 | Module | Subscription XPath | Data |
 |--------|-------------------|------|
@@ -205,7 +205,7 @@ When `tls` is omitted the server runs plaintext — useful for lab environments.
 │   ├── receiver.go                    # Lifecycle (Start / Shutdown)
 │   ├── grpc_service.go                # MdtDialout handler, metric conversion
 │   ├── telemetry.go                   # Internal observability (8 metrics)
-│   ├── yang_parser.go                 # 27 built-in YANG modules
+│   ├── yang_parser.go                 # 28 built-in YANG modules
 │   ├── rfc_yang_parser.go             # RFC 6020/7950 parser
 │   └── metadata.yaml                  # OTel component metadata
 ├── proto/                             # Cisco .proto files + generated Go

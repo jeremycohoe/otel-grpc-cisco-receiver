@@ -33,7 +33,7 @@ exporters:
     token: "cisco-mdt-token"
     source: "cisco:mdt"
     sourcetype: "cisco:mdt:grpc"
-    index: "main"
+    index: "cisco_mdt"
     tls:
       insecure_skip_verify: true   # Splunk dev cert is self-signed
 
