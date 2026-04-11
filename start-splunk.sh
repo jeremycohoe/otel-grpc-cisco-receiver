@@ -1,12 +1,12 @@
 #!/bin/bash
 # Start Splunk Enterprise in Docker with HEC pre-configured
-# Web UI: http://10.1.1.3:8000 (admin / changeme123)
-# HEC:    https://10.1.1.3:8088
+# Web UI: http://<host>:8000 (admin / Cisco123)
+# HEC:    https://<host>:8088
 
 set -e
 
 CONTAINER_NAME="splunk"
-SPLUNK_PASSWORD="changeme123"
+SPLUNK_PASSWORD="Cisco123"
 HEC_TOKEN="cisco-mdt-token"
 
 # Remove existing container if present

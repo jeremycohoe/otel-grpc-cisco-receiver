@@ -87,7 +87,7 @@ The binary is written to `./build/cisco-otelcol`.
 ```
 
 This starts Splunk Enterprise in Docker with:
-- **Web UI**: http://\<host\>:8000 (admin / changeme123)
+- **Web UI**: http://\<host\>:8000 (admin / Cisco123)
 - **HEC endpoint**: https://\<host\>:8088 (token: `cisco-mdt-token`)
 - **cisco_mdt** metrics index auto-created
 
@@ -130,7 +130,7 @@ A complete set of 21 subscriptions is in [`c9300x-mdt-subscriptions.cfg`](c9300x
 ### 5. Import the Splunk Dashboard
 
 ```bash
-curl -sk -u admin:changeme123 \
+curl -sk -u admin:Cisco123 \
   'https://localhost:8089/servicesNS/admin/search/data/ui/views/cisco_mdt_overview' \
   -X POST \
   --data-urlencode "eai:data@splunk-dashboards/cisco_mdt_overview.xml"
@@ -149,7 +149,7 @@ show telemetry ietf subscription 101 receiver
 
 ```bash
 # On the collector host — check for metrics arriving:
-curl -sk -u admin:changeme123 \
+curl -sk -u admin:Cisco123 \
   'https://localhost:8089/services/search/jobs' \
   -d 'search=| mcatalog values(metric_name) WHERE index=cisco_mdt | stats count' \
   -d output_mode=json -d exec_mode=oneshot
