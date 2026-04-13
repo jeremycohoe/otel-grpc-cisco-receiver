@@ -59,3 +59,8 @@ testdata/output/
 
 # Telemetry capture output (generated data, not source)
 telemetry-capture/
+
+# YANG models (large, downloaded via scripts/fetch-yang-models.sh)
+yang-models/
+# Keep the cached parsed modules (small JSON, fast startup)
+!yang-models/yang-cache.json

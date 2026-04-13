@@ -489,3 +489,341 @@ module complex-test {
 		})
 	}
 }
+
+func TestTokenizerPreservesURIsInStrings(t *testing.T) {
+	parser := NewRFC6020Parser()
+
+	yangContent := `
+module uri-test {
+    yang-version 1.1;
+    namespace "http://cisco.com/ns/yang/uri-test";
+    prefix "ut";
+    description
+      "This module contains definitions for testing.
+       Copyright (c) 2024 by Cisco Systems, Inc.";
+    container data {
+        leaf value {
+            type string;
+        }
+    }
+}
+`
+	module, err := parser.ParseYANGModule(yangContent, "uri-test.yang")
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	if module.Name != "uri-test" {
+		t.Errorf("Expected module name 'uri-test', got %q", module.Name)
+	}
+	if module.Namespace != "http://cisco.com/ns/yang/uri-test" {
+		t.Errorf("Expected namespace with http:// URI, got %q", module.Namespace)
+	}
+	if module.Prefix != "ut" {
+		t.Errorf("Expected prefix 'ut', got %q", module.Prefix)
+	}
+	if _, ok := module.DataNodes["data"]; !ok {
+		t.Error("Expected 'data' container to be parsed")
+	}
+}
+
+func TestGroupingAndUsesExpansion(t *testing.T) {
+	parser := NewRFC6020Parser()
+
+	yangContent := `
+module grouping-test {
+    yang-version 1.1;
+    namespace "urn:test:grouping";
+    prefix "gt";
+
+    grouping address-info {
+        leaf ip {
+            type string;
+        }
+        leaf mask {
+            type string;
+        }
+    }
+
+    grouping interface-stats {
+        leaf in-octets {
+            type uint64;
+        }
+        leaf out-octets {
+            type uint64;
+        }
+    }
+
+    container interfaces {
+        list interface {
+            key "name";
+            leaf name {
+                type string;
+            }
+            uses gt:address-info;
+            container statistics {
+                uses gt:interface-stats;
+            }
+        }
+    }
+}
+`
+	module, err := parser.ParseYANGModule(yangContent, "grouping-test.yang")
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	// Verify the interface list was parsed
+	interfaces := module.DataNodes["interfaces"]
+	if interfaces == nil {
+		t.Fatal("Expected 'interfaces' container")
+	}
+
+	iface := interfaces.Children["interface"]
+	if iface == nil {
+		t.Fatal("Expected 'interface' list inside interfaces")
+	}
+
+	if len(iface.Keys) != 1 || iface.Keys[0] != "name" {
+		t.Errorf("Expected key [name], got %v", iface.Keys)
+	}
+
+	// Verify grouping expansion: address-info leaves should be in interface
+	if _, ok := iface.Children["ip"]; !ok {
+		t.Error("Expected 'ip' leaf from address-info grouping")
+	}
+	if _, ok := iface.Children["mask"]; !ok {
+		t.Error("Expected 'mask' leaf from address-info grouping")
+	}
+
+	// Verify nested grouping: statistics container should have in/out-octets
+	stats := iface.Children["statistics"]
+	if stats == nil {
+		t.Fatal("Expected 'statistics' container")
+	}
+	if _, ok := stats.Children["in-octets"]; !ok {
+		t.Error("Expected 'in-octets' leaf from interface-stats grouping")
+	}
+	if _, ok := stats.Children["out-octets"]; !ok {
+		t.Error("Expected 'out-octets' leaf from interface-stats grouping")
+	}
+}
+
+func TestChoiceCaseFlattening(t *testing.T) {
+	parser := NewRFC6020Parser()
+
+	yangContent := `
+module choice-test {
+    yang-version 1.1;
+    namespace "urn:test:choice";
+    prefix "ct";
+
+    container value {
+        choice value-type {
+            case string-val {
+                leaf string {
+                    type string;
+                }
+            }
+            case int-val {
+                leaf integer {
+                    type int64;
+                }
+            }
+            case bool-val {
+                leaf boolean {
+                    type boolean;
+                }
+            }
+        }
+    }
+}
+`
+	module, err := parser.ParseYANGModule(yangContent, "choice-test.yang")
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	value := module.DataNodes["value"]
+	if value == nil {
+		t.Fatal("Expected 'value' container")
+	}
+
+	// All choice/case children should be flattened into the parent
+	expectedLeaves := []string{"string", "integer", "boolean"}
+	for _, leaf := range expectedLeaves {
+		if _, ok := value.Children[leaf]; !ok {
+			t.Errorf("Expected leaf %q from choice/case to be flattened into container", leaf)
+		}
+	}
+}
+
+func TestNestedListKeyAccumulation(t *testing.T) {
+	parser := NewRFC6020Parser()
+
+	yangContent := `
+module nested-list-test {
+    yang-version 1.1;
+    namespace "urn:test:nested";
+    prefix "nl";
+
+    container components {
+        list component {
+            key "cname";
+            leaf cname {
+                type string;
+            }
+            container properties {
+                list property {
+                    key "name";
+                    leaf name {
+                        type string;
+                    }
+                    leaf value {
+                        type string;
+                    }
+                }
+            }
+        }
+    }
+}
+`
+	module, err := parser.ParseYANGModule(yangContent, "nested-list-test.yang")
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	// Verify ListKeys has both lists
+	outerKeys := module.ListKeys["/components/component"]
+	if len(outerKeys) == 0 || outerKeys[0] != "cname" {
+		t.Errorf("Expected ListKeys for /components/component = [cname], got %v", outerKeys)
+	}
+
+	innerKeys := module.ListKeys["/components/component/properties/property"]
+	if len(innerKeys) == 0 || innerKeys[0] != "name" {
+		t.Errorf("Expected ListKeys for /components/component/properties/property = [name], got %v", innerKeys)
+	}
+
+	// AnalyzeTelemetryPath for the nested path should return BOTH keys
+	analysis := parser.AnalyzeTelemetryPath("nested-list-test:components/component/properties/property")
+	if analysis == nil || !analysis.IsValid {
+		t.Fatal("Expected valid analysis for nested path")
+	}
+
+	if len(analysis.ListKeys) != 2 {
+		t.Fatalf("Expected 2 accumulated keys [cname, name], got %v", analysis.ListKeys)
+	}
+
+	hasCname := false
+	hasName := false
+	for _, k := range analysis.ListKeys {
+		if k == "cname" {
+			hasCname = true
+		}
+		if k == "name" {
+			hasName = true
+		}
+	}
+	if !hasCname {
+		t.Error("Expected 'cname' in accumulated ListKeys")
+	}
+	if !hasName {
+		t.Error("Expected 'name' in accumulated ListKeys")
+	}
+}
+
+func TestFindDataNodeByPathTreeWalk(t *testing.T) {
+	parser := NewRFC6020Parser()
+
+	yangContent := `
+module tree-test {
+    yang-version 1.1;
+    namespace "urn:test:tree";
+    prefix "tt";
+
+    container top {
+        container middle {
+            list items {
+                key "id";
+                leaf id {
+                    type string;
+                }
+                leaf data {
+                    type uint32;
+                }
+            }
+        }
+    }
+}
+`
+	module, err := parser.ParseYANGModule(yangContent, "tree-test.yang")
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	// findDataNodeByPath should find top-level nodes
+	top := parser.findDataNodeByPath(module, "top")
+	if top == nil {
+		t.Fatal("Expected to find 'top' node")
+	}
+
+	// findDataNodeByPath should traverse into children
+	middle := parser.findDataNodeByPath(module, "top/middle")
+	if middle == nil {
+		t.Fatal("Expected to find 'top/middle' node via tree walk")
+	}
+
+	items := parser.findDataNodeByPath(module, "top/middle/items")
+	if items == nil {
+		t.Fatal("Expected to find 'top/middle/items' node via tree walk")
+	}
+	if items.NodeType != "list" {
+		t.Errorf("Expected 'items' to be a list, got %q", items.NodeType)
+	}
+
+	// Should return nil for non-existent paths
+	missing := parser.findDataNodeByPath(module, "top/nonexistent/path")
+	if missing != nil {
+		t.Error("Expected nil for non-existent path")
+	}
+}
+
+func TestYANGLoaderCacheRoundTrip(t *testing.T) {
+	parser := NewRFC6020Parser()
+
+	yangContent := `
+module cache-test {
+    yang-version 1.1;
+    namespace "http://example.com/cache-test";
+    prefix "ct";
+    container data {
+        list entry {
+            key "id";
+            leaf id { type string; }
+            leaf value { type uint32; }
+        }
+    }
+}
+`
+	_, err := parser.ParseYANGModule(yangContent, "cache-test.yang")
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	// Export and verify the module round-trips through JSON
+	jsonData, err := parser.ExportModules()
+	if err != nil {
+		t.Fatalf("Export failed: %v", err)
+	}
+
+	jsonStr := string(jsonData)
+	if !strings.Contains(jsonStr, "cache-test") {
+		t.Error("Expected module name in JSON export")
+	}
+	if !strings.Contains(jsonStr, "http://example.com/cache-test") {
+		t.Error("Expected namespace URL in JSON export")
+	}
+	if !strings.Contains(jsonStr, "entry") {
+		t.Error("Expected 'entry' list in JSON export")
+	}
+}

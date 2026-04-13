@@ -32,6 +32,15 @@ type YANGConfig struct {
 
 	// MaxModules is the maximum number of YANG modules to cache.
 	MaxModules int `mapstructure:"max_modules"`
+
+	// ModelsDir is the path to a directory containing .yang files.
+	// On first run (or when files change), the RFC parser reads all .yang files
+	// and caches the extracted metadata to CacheFile for instant startup.
+	ModelsDir string `mapstructure:"models_dir"`
+
+	// CacheFile is the path to the serialized YANG module cache.
+	// Auto-generated from ModelsDir contents. Defaults to <ModelsDir>/yang-cache.json.
+	CacheFile string `mapstructure:"cache_file"`
 }
 
 // Config represents the receiver configuration within the collector config.yaml.

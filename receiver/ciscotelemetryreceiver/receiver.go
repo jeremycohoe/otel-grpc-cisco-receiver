@@ -106,6 +106,25 @@ func (ctr *ciscoTelemetryReceiver) Start(ctx context.Context, host component.Hos
 	yangParser.LoadBuiltinModules()
 	rfcYangParser := NewRFC6020ParserWithLogger(ctr.settings.Logger)
 
+	// Load YANG models from directory if configured.
+	if ctr.config.YANG.ModelsDir != "" {
+		loaded, err := LoadYANGModelsDir(
+			ctr.config.YANG.ModelsDir,
+			ctr.config.YANG.CacheFile,
+			rfcYangParser,
+			ctr.settings.Logger,
+		)
+		if err != nil {
+			ctr.settings.Logger.Warn("Failed to load YANG models directory",
+				zap.String("dir", ctr.config.YANG.ModelsDir),
+				zap.Error(err))
+		} else if loaded > 0 {
+			ctr.settings.Logger.Info("YANG models loaded from directory",
+				zap.String("dir", ctr.config.YANG.ModelsDir),
+				zap.Int("modules", loaded))
+		}
+	}
+
 	// Register the Cisco MDT gRPC dial-out service.
 	service := &grpcService{
 		receiver:      ctr,

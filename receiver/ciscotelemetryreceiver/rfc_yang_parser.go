@@ -180,7 +180,8 @@ type RFC6020DataNode struct {
 	Reference   string                      `json:"reference,omitempty"`
 	IfFeatures  []string                    `json:"if_features,omitempty"`
 	Children    map[string]*RFC6020DataNode `json:"children,omitempty"`
-	Path        string                      `json:"path"` // Full XPath
+	UsesRefs    []string                    `json:"uses_refs,omitempty"` // grouping references to expand
+	Path        string                      `json:"path"`               // Full XPath
 }
 
 // RFC6020Grouping represents a grouping statement (RFC 7.12)
@@ -449,18 +450,27 @@ func (p *RFC6020Parser) ParseYANGModule(content, filename string) (*RFC6020Modul
 func (p *RFC6020Parser) TokenizeYANG(content string) ([]string, error) {
 	var tokens []string
 
-	// Remove C-style comments (RFC 6020 Section 6.1.1)
-	// Single-line comments: // comment
-	singleLineCommentRe := regexp.MustCompile(`//.*?(?:\r?\n|$)`)
-	content = singleLineCommentRe.ReplaceAllString(content, "\n")
-
-	// Block comments: /* comment */ (including multiline)
-	blockCommentRe := regexp.MustCompile(`(?s)/\*.*?\*/`)
-	content = blockCommentRe.ReplaceAllString(content, " ")
+	// Strip comments while respecting string boundaries.
+	// A naive regex replacement of "//" will corrupt URIs inside
+	// quoted strings (e.g. namespace "http://cisco.com/...";).
+	// Instead, use a single pass that matches strings first (preserving
+	// them) and only then matches comment patterns (discarding them).
+	stripRe := regexp.MustCompile(`(?s)"[^"]*"|'[^']*'|//[^\r\n]*|/\*.*?\*/`)
+	content = stripRe.ReplaceAllStringFunc(content, func(m string) string {
+		if m[0] == '"' || m[0] == '\'' {
+			return m // keep quoted strings intact
+		}
+		if strings.HasPrefix(m, "/*") {
+			return " " // block comment → space
+		}
+		return "\n" // line comment → newline
+	})
 
 	// Tokenize according to RFC 6020 Section 6.1.2
-	// Strings (with newlines), keywords, semicolons, braces, numbers
-	tokenRe := regexp.MustCompile(`(?s)"[^"]*"|'[^']*'|[a-zA-Z_][a-zA-Z0-9_.-]*|[0-9]+(?:\.[0-9]+)?|[{};]`)
+	// Strings (with newlines), keywords, semicolons, braces, numbers.
+	// Identifiers may include ':' for YANG qualified names
+	// (e.g., "prefix:grouping-name" in uses/type statements).
+	tokenRe := regexp.MustCompile(`(?s)"[^"]*"|'[^']*'|[a-zA-Z_][a-zA-Z0-9_.-]*(?::[a-zA-Z_][a-zA-Z0-9_.-]*)*|[0-9]+(?:\.[0-9]+)?|[{};]`)
 	matches := tokenRe.FindAllString(content, -1)
 
 	for _, match := range matches {
@@ -477,9 +487,13 @@ func (p *RFC6020Parser) TokenizeYANG(content string) ([]string, error) {
 func (p *RFC6020Parser) parseTokens(tokens []string, module *RFC6020Module) error {
 	i := 0
 
+	// Track brace depth so that the module's own "{" and "}" are consumed
+	// normally while stray opening braces from unknown statements are skipped.
+	moduleDepth := 0
+
 	for i < len(tokens) {
 		switch tokens[i] {
-		case "module":
+		case "module", "submodule":
 			if i+1 < len(tokens) {
 				module.Name = p.unquoteString(tokens[i+1])
 				i += 2
@@ -565,10 +579,40 @@ func (p *RFC6020Parser) parseTokens(tokens []string, module *RFC6020Module) erro
 				node.Path = "/" + node.Name
 			}
 			i += consumed
-		default:
+		case "grouping":
+			grp, consumed := p.parseGrouping(tokens[i:])
+			if grp != nil {
+				module.Groupings[grp.Name] = grp
+			}
+			i += consumed
+		case "augment":
+			// Parse augment block: augment <path> { ... }
+			// The data nodes inside augment should be merged into the module
+			// tree at the target path. For our purposes we parse the contained
+			// data nodes and attach them to the module root since we resolve
+			// paths during telemetry analysis anyway.
+			consumed := p.parseAugment(tokens[i:], module)
+			i += consumed
+		case "{":
+			moduleDepth++
 			i++
+		case "}":
+			moduleDepth--
+			i++
+		default:
+			// If the next token after an unknown keyword is "{", skip the
+			// entire block (e.g., identity, notification, rpc, extension).
+			if i+1 < len(tokens) && tokens[i+1] == "{" {
+				i++ // skip the keyword
+				i += p.skipBlock(tokens[i:])
+			} else {
+				i++
+			}
 		}
 	}
+
+	// Expand all 'uses' references now that all groupings are parsed.
+	p.expandUsesInDataNodes(module.DataNodes, module)
 
 	// Sort revisions by date (newest first)
 	sort.Slice(module.Revisions, func(i, j int) bool {
@@ -899,6 +943,31 @@ func (p *RFC6020Parser) parseDataNode(tokens []string, parentPath string) (*RFC6
 					child.Path = childPath + "/" + child.Name
 				}
 				i += consumed
+			case "uses":
+				// Record the grouping reference; actual expansion happens later
+				// in expandUsesInDataNodes after all groupings are parsed.
+				if i+1 < len(tokens) {
+					ref := p.unquoteString(tokens[i+1])
+					if node.UsesRefs == nil {
+						node.UsesRefs = []string{}
+					}
+					node.UsesRefs = append(node.UsesRefs, ref)
+					i += 2
+					// Skip optional trailing semicolon or block
+					if i < len(tokens) && tokens[i] == ";" {
+						i++
+					} else if i < len(tokens) && tokens[i] == "{" {
+						i += p.skipBlock(tokens[i:])
+					}
+				}
+			case "choice":
+				// choice <name> { case <name> { <data-nodes> } ... }
+				// Flatten: treat the inner data nodes as direct children.
+				consumed := p.parseChoice(tokens[i:], parentPath+"/"+node.Name, node)
+				i += consumed
+			case "{":
+				// Unknown statement with a block — skip it entirely.
+				i += p.skipBlock(tokens[i:])
 			default:
 				i++
 			}
@@ -909,6 +978,314 @@ func (p *RFC6020Parser) parseDataNode(tokens []string, parentPath string) (*RFC6
 	}
 
 	return node, i
+}
+
+// skipBlock skips a brace-delimited block starting at tokens[0] == "{".
+// Returns the number of tokens consumed including the closing "}".
+func (p *RFC6020Parser) skipBlock(tokens []string) int {
+	if len(tokens) == 0 || tokens[0] != "{" {
+		return 1
+	}
+	depth := 0
+	for i, t := range tokens {
+		if t == "{" {
+			depth++
+		} else if t == "}" {
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return len(tokens)
+}
+
+// parseGrouping parses a grouping statement and its data node contents.
+// grouping <name> { container/leaf/list/... }
+func (p *RFC6020Parser) parseGrouping(tokens []string) (*RFC6020Grouping, int) {
+	if len(tokens) < 3 {
+		return nil, 1
+	}
+
+	grp := &RFC6020Grouping{
+		Name:      p.unquoteString(tokens[1]),
+		DataNodes: make(map[string]*RFC6020DataNode),
+	}
+
+	i := 2
+	if i < len(tokens) && tokens[i] == "{" {
+		i++
+		for i < len(tokens) && tokens[i] != "}" {
+			switch tokens[i] {
+			case "description":
+				if i+1 < len(tokens) {
+					grp.Description = p.unquoteString(tokens[i+1])
+					i += 2
+				}
+			case "container", "leaf", "leaf-list", "list":
+				child, consumed := p.parseDataNode(tokens[i:], "")
+				if child != nil {
+					grp.DataNodes[child.Name] = child
+				}
+				i += consumed
+			case "uses":
+				// uses inside grouping — store reference on a synthetic node
+				// We'll resolve these during expandUsesInDataNodes
+				if i+1 < len(tokens) {
+					ref := p.unquoteString(tokens[i+1])
+					// Store uses refs in the grouping for later expansion
+					// by attaching to a synthetic data node
+					syntheticName := "__uses__" + ref
+					grp.DataNodes[syntheticName] = &RFC6020DataNode{
+						Name:     syntheticName,
+						NodeType: "uses",
+						UsesRefs: []string{ref},
+						Children: make(map[string]*RFC6020DataNode),
+					}
+					i += 2
+					if i < len(tokens) && tokens[i] == ";" {
+						i++
+					} else if i < len(tokens) && tokens[i] == "{" {
+						i += p.skipBlock(tokens[i:])
+					}
+				}
+			case "choice":
+				consumed := p.parseChoiceIntoMap(tokens[i:], grp.DataNodes)
+				i += consumed
+			case "{":
+				i += p.skipBlock(tokens[i:])
+			default:
+				i++
+			}
+		}
+		if i < len(tokens) && tokens[i] == "}" {
+			i++
+		}
+	}
+
+	return grp, i
+}
+
+// parseAugment parses an augment block and adds its data nodes to the module.
+// augment <target-path> { <data-nodes> }
+func (p *RFC6020Parser) parseAugment(tokens []string, module *RFC6020Module) int {
+	if len(tokens) < 3 {
+		return 1
+	}
+	// tokens[0] = "augment", tokens[1] = target-path
+	i := 2
+	if i < len(tokens) && tokens[i] == "{" {
+		i++
+		for i < len(tokens) && tokens[i] != "}" {
+			switch tokens[i] {
+			case "container", "leaf", "leaf-list", "list":
+				child, consumed := p.parseDataNode(tokens[i:], "")
+				if child != nil {
+					module.DataNodes[child.Name] = child
+				}
+				i += consumed
+			case "{":
+				i += p.skipBlock(tokens[i:])
+			default:
+				i++
+			}
+		}
+		if i < len(tokens) && tokens[i] == "}" {
+			i++
+		}
+	}
+	return i
+}
+
+// parseChoice parses a choice/case block and flattens data nodes into the parent.
+func (p *RFC6020Parser) parseChoice(tokens []string, parentPath string, parent *RFC6020DataNode) int {
+	if len(tokens) < 3 {
+		return 1
+	}
+	// tokens[0] = "choice", tokens[1] = choice-name
+	i := 2
+	if i < len(tokens) && tokens[i] == "{" {
+		i++
+		for i < len(tokens) && tokens[i] != "}" {
+			switch tokens[i] {
+			case "case":
+				// case <name> { <data-nodes> }
+				if i+2 < len(tokens) && tokens[i+2] == "{" {
+					j := i + 3
+					for j < len(tokens) && tokens[j] != "}" {
+						switch tokens[j] {
+						case "container", "leaf", "leaf-list", "list":
+							child, consumed := p.parseDataNode(tokens[j:], parentPath)
+							if child != nil {
+								parent.Children[child.Name] = child
+								child.Path = parentPath + "/" + child.Name
+							}
+							j += consumed
+						case "{":
+							j += p.skipBlock(tokens[j:])
+						default:
+							j++
+						}
+					}
+					if j < len(tokens) && tokens[j] == "}" {
+						j++
+					}
+					i = j
+				} else {
+					i++
+				}
+			case "container", "leaf", "leaf-list", "list":
+				// Direct data nodes inside choice (no case wrapper)
+				child, consumed := p.parseDataNode(tokens[i:], parentPath)
+				if child != nil {
+					parent.Children[child.Name] = child
+					child.Path = parentPath + "/" + child.Name
+				}
+				i += consumed
+			case "{":
+				i += p.skipBlock(tokens[i:])
+			default:
+				i++
+			}
+		}
+		if i < len(tokens) && tokens[i] == "}" {
+			i++
+		}
+	}
+	return i
+}
+
+// parseChoiceIntoMap is like parseChoice but adds nodes to a generic map
+// (used inside grouping parsing).
+func (p *RFC6020Parser) parseChoiceIntoMap(tokens []string, nodes map[string]*RFC6020DataNode) int {
+	if len(tokens) < 3 {
+		return 1
+	}
+	i := 2
+	if i < len(tokens) && tokens[i] == "{" {
+		i++
+		for i < len(tokens) && tokens[i] != "}" {
+			switch tokens[i] {
+			case "case":
+				if i+2 < len(tokens) && tokens[i+2] == "{" {
+					j := i + 3
+					for j < len(tokens) && tokens[j] != "}" {
+						switch tokens[j] {
+						case "container", "leaf", "leaf-list", "list":
+							child, consumed := p.parseDataNode(tokens[j:], "")
+							if child != nil {
+								nodes[child.Name] = child
+							}
+							j += consumed
+						case "{":
+							j += p.skipBlock(tokens[j:])
+						default:
+							j++
+						}
+					}
+					if j < len(tokens) && tokens[j] == "}" {
+						j++
+					}
+					i = j
+				} else {
+					i++
+				}
+			case "container", "leaf", "leaf-list", "list":
+				child, consumed := p.parseDataNode(tokens[i:], "")
+				if child != nil {
+					nodes[child.Name] = child
+				}
+				i += consumed
+			case "{":
+				i += p.skipBlock(tokens[i:])
+			default:
+				i++
+			}
+		}
+		if i < len(tokens) && tokens[i] == "}" {
+			i++
+		}
+	}
+	return i
+}
+
+// expandUsesInDataNodes recursively expands all 'uses' references in data nodes
+// by copying the grouping's data nodes into the referencing node's children.
+func (p *RFC6020Parser) expandUsesInDataNodes(nodes map[string]*RFC6020DataNode, module *RFC6020Module) {
+	for name, node := range nodes {
+		// Remove synthetic __uses__ entries and expand them
+		if strings.HasPrefix(name, "__uses__") {
+			delete(nodes, name)
+			for _, ref := range node.UsesRefs {
+				p.copyGroupingNodes(ref, nodes, module)
+			}
+			continue
+		}
+
+		// Expand uses refs on this node
+		for _, ref := range node.UsesRefs {
+			p.copyGroupingNodes(ref, node.Children, module)
+		}
+		node.UsesRefs = nil
+
+		// Recurse into children
+		if len(node.Children) > 0 {
+			p.expandUsesInDataNodes(node.Children, module)
+		}
+	}
+}
+
+// copyGroupingNodes copies all data nodes from a grouping into the target map.
+func (p *RFC6020Parser) copyGroupingNodes(ref string, target map[string]*RFC6020DataNode, module *RFC6020Module) {
+	// Strip prefix (e.g., "platform-ios-xe-oper:platform-component" → "platform-component")
+	grpName := ref
+	if idx := strings.LastIndex(ref, ":"); idx >= 0 {
+		grpName = ref[idx+1:]
+	}
+
+	grp, ok := module.Groupings[grpName]
+	if !ok {
+		return
+	}
+
+	for childName, childNode := range grp.DataNodes {
+		// Deep copy to avoid shared mutation
+		copied := p.deepCopyDataNode(childNode)
+		target[childName] = copied
+	}
+}
+
+// deepCopyDataNode creates a deep copy of a data node and all its children.
+func (p *RFC6020Parser) deepCopyDataNode(src *RFC6020DataNode) *RFC6020DataNode {
+	dst := &RFC6020DataNode{
+		Name:        src.Name,
+		NodeType:    src.NodeType,
+		Config:      src.Config,
+		Mandatory:   src.Mandatory,
+		Presence:    src.Presence,
+		OrderedBy:   src.OrderedBy,
+		Units:       src.Units,
+		Status:      src.Status,
+		Description: src.Description,
+		Reference:   src.Reference,
+		Path:        src.Path,
+		Children:    make(map[string]*RFC6020DataNode),
+	}
+	if src.Type != nil {
+		dst.Type = src.Type
+	}
+	if len(src.Keys) > 0 {
+		dst.Keys = make([]string, len(src.Keys))
+		copy(dst.Keys, src.Keys)
+	}
+	if len(src.UsesRefs) > 0 {
+		dst.UsesRefs = make([]string, len(src.UsesRefs))
+		copy(dst.UsesRefs, src.UsesRefs)
+	}
+	for name, child := range src.Children {
+		dst.Children[name] = p.deepCopyDataNode(child)
+	}
+	return dst
 }
 
 // performSemanticAnalysis analyzes the parsed module for semantic information
@@ -1256,9 +1633,31 @@ func (p *RFC6020Parser) AnalyzeTelemetryPath(encodingPath string) *RFC6020Teleme
 			analysis.DataNodes[fullPath] = dataNode
 			if dataNode.NodeType == "list" {
 				analysis.ListPath = "/" + fullPath
-				// Extract list keys if available
-				if len(dataNode.Keys) > 0 {
-					analysis.ListKeys = dataNode.Keys
+				// Accumulate list keys from ALL lists along the path,
+				// not just the last one. Subscriptions to nested lists
+				// (e.g., components/component/platform-properties/platform-property)
+				// include key values for every list ancestor.
+				analysis.ListKeys = append(analysis.ListKeys, dataNode.Keys...)
+			}
+		}
+
+		// Fallback: check module.ListKeys directly. analyzeDataNodes
+		// populates this map with leading-slash paths during semantic
+		// analysis, so it is authoritative even when findDataNodeByPath
+		// cannot locate the node (e.g. augmented or grouped nodes).
+		if keys, ok := module.ListKeys["/"+fullPath]; ok && len(keys) > 0 {
+			analysis.ListPath = "/" + fullPath
+			// Only add keys not already present
+			for _, k := range keys {
+				found := false
+				for _, existing := range analysis.ListKeys {
+					if existing == k {
+						found = true
+						break
+					}
+				}
+				if !found {
+					analysis.ListKeys = append(analysis.ListKeys, k)
 				}
 			}
 		}
@@ -1464,7 +1863,33 @@ func (p *RFC6020Parser) InferDataTypeFromPath(segment string) *RFC6020Type {
 } // findDataNodeByPath finds a data node by its path in the module
 func (p *RFC6020Parser) findDataNodeByPath(module *RFC6020Module, path string) *RFC6020DataNode {
 	cleanPath := strings.Trim(path, "/")
-	return module.DataNodes[cleanPath]
+
+	// Fast path: direct lookup works for dynamic modules that store full paths.
+	if node, ok := module.DataNodes[cleanPath]; ok {
+		return node
+	}
+
+	// Slow path: parsed YANG modules store only top-level nodes in DataNodes.
+	// Nested nodes live in the Children hierarchy, so walk the tree.
+	segments := strings.Split(cleanPath, "/")
+	if len(segments) == 0 {
+		return nil
+	}
+
+	node := module.DataNodes[segments[0]]
+	if node == nil {
+		return nil
+	}
+
+	for _, seg := range segments[1:] {
+		child, ok := node.Children[seg]
+		if !ok {
+			return nil
+		}
+		node = child
+	}
+
+	return node
 }
 
 // applySemanticHeuristics applies semantic classification heuristics

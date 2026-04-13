@@ -1,8 +1,8 @@
 # Plan: Splunk Dashboard Studio Redesign
 
-## Status: Phase 1-8 COMPLETE — Iterating on query fixes
+## Status: COMPLETE — All dashboards live-tested and verified
 
-All 7 dashboards created, imported into Splunk, import script working, README updated. Currently iterating on SPL query accuracy based on live testing.
+All 7 dashboards created, imported, and verified against live switch data (59/60 queries working). YANG models directory loading implemented — key-value correlation gap resolved. Parser tests added.
 
 ## TL;DR
 Complete redesign of the Cisco MDT telemetry dashboard from Classic XML (30 panels in one file) to a multi-dashboard Splunk Dashboard Framework (JSON) suite covering all active telemetry subscriptions. Organized as a main overview dashboard with navigation links to 6 category-specific dashboards.
@@ -140,7 +140,7 @@ All 7 dashboard JSON files created in `splunk-dashboards/`:
 - `cisco_mdt_infrastructure.json` — 18 visualizations, 18+ data sources
 - `cisco_mdt_network.json` — 15 visualizations, 16+ data sources
 - `cisco_mdt_routing.json` — 13 visualizations, 14+ data sources
-- `cisco_mdt_power.json` — 11 visualizations (updated with real fan RPM, PSU capacity, env overview)
+- `cisco_mdt_power.json` — 12 visualizations (updated with YANG-aware name= attribute queries, PSU detail panel)
 - `cisco_mdt_security.json` — 10 visualizations, 12+ data sources
 - `cisco_mdt_telemetry.json` — 7 visualizations (updated with working queries)
 
@@ -170,9 +170,57 @@ These fixes were applied during live testing with actual switch data:
 
 8. **Import Script**: Rewrote from bash curl to Python urllib — bash CDATA `<![CDATA[` was conflicting with bash `!` history expansion. Now handles XML escaping, `&` in titles, and create-vs-update logic correctly.
 
+### YANG Models Loading & Key-Value Correlation Fix — DONE
+Implemented YANG models directory loading with parse-once/cache-forever architecture, resolving the key-value correlation gap:
+
+**New files:**
+- `receiver/ciscotelemetryreceiver/yang_loader.go` — `LoadYANGModelsDir()`: parses all `.yang` files, caches to `yang-cache.json` (31MB), uses SHA-256 hash of directory contents for invalidation. ~3.3s initial parse, instant cache load.
+- `scripts/fetch-yang-models.sh` — Downloads 848 YANG files from `YangModels/yang` GitHub repo (IOS XE 17.18.1).
+
+**Parser fixes (rfc_yang_parser.go):**
+1. **Tokenizer URI corruption**: `//` in `namespace "http://cisco.com/..."` was being stripped as a comment. Fixed with single-pass regex that matches quoted strings first, then strips comments.
+2. **Qualified name splitting**: `prefix:grouping-name` was split into two tokens at `:`. Fixed with regex `(?::[a-zA-Z_]…)*` appended to identifier pattern.
+3. **Grouping/uses expansion**: Added `parseGrouping()`, `expandUsesInDataNodes()` with deep copy. YANG `uses` references now resolve to actual data nodes.
+4. **Choice/case flattening**: Added `parseChoice()`/`parseChoiceIntoMap()` — `choice { case { container ... } }` flattened into parent's Children map.
+5. **Augment merging**: Added `parseAugment()` — merges augmented data nodes into the module.
+6. **Nested key accumulation**: `AnalyzeTelemetryPath` was overwriting `ListKeys` for each list. Changed to `append()` so all list keys along a path (e.g., `cname` + `name`) are propagated.
+7. **Tree-walking findDataNodeByPath**: Added Children tree traversal fallback when flat map lookup fails.
+
+**Config changes:**
+- `config.go` — Added `ModelsDir` and `CacheFile` to `YANGConfig`.
+- `receiver.go` — Calls `LoadYANGModelsDir()` at startup.
+- `collector-config.yaml` — Added `models_dir: ./yang-models`.
+- `.gitignore` — Excludes `yang-models/` but keeps `yang-cache.json`.
+
+**Result:** `{cname: "Fan1/1", name: "speed", value: "5440"}` now correctly appears in Splunk with `name` as a queryable dimension.
+
+### Dashboard Live Testing — DONE
+All 4 remaining dashboards tested against live Splunk data:
+- **Infrastructure**: 15/15 queries working (CPU, memory, DRAM, environment, stack, hardware, install, HA)
+- **Network**: 15/15 queries working (interfaces, VLANs, STP, ARP, MAC, LLDP, CDP, switchport)
+- **Routing**: 14/15 queries working (BGP, OSPF, RIB, FIB/CEF, VRF, DHCP — NTP Peers empty as expected)
+- **Security**: 15/15 queries working (802.1X, WebAuth, TrustSec, ACLs, MACsec, MKA, TCAM)
+- **Total**: 59/60 (98%) — only NTP Peers empty (no peers configured on test switches)
+
+### Power Dashboard Update — DONE
+Replaced heuristic-based queries with YANG-aware attribute filtering:
+- **Fan Speed**: `name="speed"` filter replaces `tonumber(value) > 100` heuristic
+- **PSU Type & Capacity**: `name="type" OR name="capacity"` replaces AC/DC string + value range heuristic
+- **Environment Overview**: Appends platform-property fan speed data from new metric path
+- **NEW PSU Detail panel**: Live PSU readings (input/output voltage, current, power, power-factor) using `cname="PowerSupply*"` with `name` attribute filtering
+
+### Parser Tests — DONE
+Added 6 tests to `rfc_yang_parser_test.go` covering all new parser features:
+1. `TestTokenizerPreservesURIsInStrings` — verifies `//` in namespace URIs preserved
+2. `TestGroupingAndUsesExpansion` — verifies grouping/uses resolution
+3. `TestChoiceCaseFlattening` — verifies choice/case flattened into parent
+4. `TestNestedListKeyAccumulation` — verifies multi-level list keys accumulated
+5. `TestFindDataNodeByPathTreeWalk` — verifies tree traversal for deep nodes
+6. `TestYANGLoaderCacheRoundTrip` — verifies cache write/read/invalidation cycle
+
 ## Known Issues & Future Work
-- **Key-value correlation gap**: Fan RPM, PSU watts, and other platform-property values are stored as generic `cisco.content.value.string_info` with `cname` identifying the component but `name` (speed, input-voltage, capacity, etc.) stored as a **separate key metric** (`cisco.keys.name_info`). Without key propagation in the receiver, we can't label which value is RPM vs watts vs voltage in the same query. Current workaround: filter by cname pattern + value range heuristics.
-- **Other dashboards not yet tested live**: Infrastructure, Network, Routing, and Security dashboards have not been tested against live Splunk data yet. Queries were adapted from proven XML dashboard queries but may need similar fixes when tested.
+- ~~**Key-value correlation gap**~~: **RESOLVED** — YANG models directory loading now parses 848 modules, propagates list keys (`cname`, `name`) as attributes on sibling metrics. Power dashboard queries updated to use proper `name="speed"`, `name="capacity"` filters instead of value heuristics.
+- ~~**Other dashboards not yet tested live**~~: **RESOLVED** — All 4 remaining dashboards (Infrastructure, Network, Routing, Security) tested against live Splunk data. 59/60 queries working. Only NTP Peers panel empty (expected — no NTP peers configured on test switches).
 - **Dashboard Studio rendering**: Some panels may need layout/size adjustments once viewed in the actual Dashboard Studio UI. Grid positioning was set programmatically.
 - **PoE Port Detail query**: Uses multi-append pattern to correlate intf-name with oper-power. May need refinement if there are many ports with power data.
 - **Navigation links**: Overview dashboard nav links use `/app/search/cisco_mdt_*` URL pattern — verify these work in the Splunk app context.

@@ -62,6 +62,12 @@
       "dataSources": { "primary": "ds_psu_table" },
       "options": { "count": 10 }
     },
+    "viz_psu_detail": {
+      "type": "splunk.table",
+      "title": "Power Supply Live Readings",
+      "dataSources": { "primary": "ds_psu_detail" },
+      "options": { "count": 10 }
+    },
     "viz_psu_platform": {
       "type": "splunk.table",
       "title": "Power Supply Sensor State",
@@ -140,7 +146,7 @@
     "ds_psu_table": {
       "type": "ds.search",
       "options": {
-        "query": "| mstats latest(\"cisco.content.value.string_info\") as v WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" cname=\"PowerSupply*\" BY cisco.node_id cname value | where value=\"AC\" OR value=\"DC\" OR (match(value, \"^[0-9]+$\") AND tonumber(value)>=100) | stats values(eval(if(value=\"AC\" OR value=\"DC\", value, null()))) as Type values(eval(if(match(value, \"^[0-9]+$\") AND tonumber(value)>=100, value, null()))) as \"Capacity (W)\" BY cisco.node_id cname | rename cisco.node_id as Switch cname as \"Power Supply\" | table Switch \"Power Supply\" Type \"Capacity (W)\" | sort Switch \"Power Supply\"",
+        "query": "| mstats latest(\"cisco.content.platform-properties.platform-property.value.string_info\") as v WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" cname=\"PowerSupply*\" (name=\"type\" OR name=\"capacity\") BY cisco.node_id cname name value | stats values(eval(if(name=\"type\", value, null()))) as Type values(eval(if(name=\"capacity\", value, null()))) as \"Capacity (W)\" BY cisco.node_id cname | rename cisco.node_id as Switch cname as \"Power Supply\" | table Switch \"Power Supply\" Type \"Capacity (W)\" | sort Switch \"Power Supply\"",
         "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
       }
     },
@@ -154,7 +160,14 @@
     "ds_fan_table": {
       "type": "ds.search",
       "options": {
-        "query": "| mstats latest(\"cisco.content.value.string_info\") as v WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" cname=\"Fan*\" BY cisco.node_id cname value | where isnum(tonumber(value)) AND tonumber(value) > 100 | dedup cisco.node_id cname | rename cisco.node_id as Switch cname as Fan value as \"Speed (RPM)\" | table Switch Fan \"Speed (RPM)\" | sort Switch Fan",
+        "query": "| mstats latest(\"cisco.content.platform-properties.platform-property.value.string_info\") as v WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" cname=\"Fan*\" name=\"speed\" BY cisco.node_id cname value | rename cisco.node_id as Switch cname as Fan value as \"Speed (RPM)\" | table Switch Fan \"Speed (RPM)\" | sort Switch Fan",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_psu_detail": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.platform-properties.platform-property.value.string_info\") as v WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" cname=\"PowerSupply*\" (name=\"input-voltage\" OR name=\"input-current\" OR name=\"input-power\" OR name=\"output-voltage\" OR name=\"output-current\" OR name=\"output-power\" OR name=\"power-factor\") BY cisco.node_id cname name value | eval value=round(tonumber(value), 1) | chart values(value) BY cisco.node_id, cname, name | rename cisco.node_id as Switch cname as \"Power Supply\"",
         "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
       }
     },
@@ -168,7 +181,7 @@
     "ds_env_overview": {
       "type": "ds.search",
       "options": {
-        "query": "| mstats latest(\"cisco.content.environment-sensor.current-reading\") as Reading latest(\"cisco.content.environment-sensor.state_info\") as si WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id name location | append [| mstats latest(\"cisco.content.environment-sensor.state_info\") as si WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id name value location | rename value as State | fields cisco.node_id name location State] | stats latest(Reading) as Reading values(State) as State BY cisco.node_id name location | eval Type=case(match(name, \"(?i)temp\"), \"Temperature\", match(name, \"(?i)fan\"), \"Fan\", match(name, \"(?i)power\"), \"Power Supply\", 1=1, \"Other\"), Units=case(match(name, \"(?i)temp\"), \"°C\", match(name, \"(?i)fan\"), \"RPM\", 1=1, \"-\") | rename cisco.node_id as Switch name as Sensor location as Location | table Switch Location Type Sensor Reading Units State | sort Switch Type Sensor",
+        "query": "| mstats latest(\"cisco.content.environment-sensor.current-reading\") as Reading WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id name location | append [| mstats latest(\"cisco.content.environment-sensor.state_info\") as si WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id name value location | rename value as State | fields cisco.node_id name location State] | append [| mstats latest(\"cisco.content.platform-properties.platform-property.value.string_info\") as v WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" cname=\"Fan*\" name=\"speed\" BY cisco.node_id cname value | eval name=cname, Reading=value, location=\"Platform\" | fields cisco.node_id name location Reading] | stats latest(Reading) as Reading values(State) as State BY cisco.node_id name location | eval Type=case(match(name, \"(?i)temp\"), \"Temperature\", match(name, \"(?i)fan\"), \"Fan\", match(name, \"(?i)power\"), \"Power Supply\", 1=1, \"Other\"), Units=case(match(name, \"(?i)temp\"), \"°C\", match(name, \"(?i)fan\"), \"RPM\", 1=1, \"-\") | rename cisco.node_id as Switch name as Sensor location as Location | table Switch Location Type Sensor Reading Units State | sort Switch Type Sensor",
         "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
       }
     }
@@ -207,7 +220,8 @@
       { "item": "viz_fan_table", "type": "block", "position": { "x": 0, "y": 1610, "w": 480, "h": 250 } },
       { "item": "viz_fan_platform", "type": "block", "position": { "x": 480, "y": 1610, "w": 480, "h": 250 } },
       { "item": "viz_psu_table", "type": "block", "position": { "x": 960, "y": 1610, "w": 480, "h": 250 } },
-      { "item": "viz_psu_platform", "type": "block", "position": { "x": 0, "y": 1870, "w": 480, "h": 200 } }
+      { "item": "viz_psu_platform", "type": "block", "position": { "x": 0, "y": 1870, "w": 720, "h": 200 } },
+      { "item": "viz_psu_detail", "type": "block", "position": { "x": 720, "y": 1870, "w": 720, "h": 200 } }
     ],
     "globalInputs": ["input_switch", "input_time"]
   },

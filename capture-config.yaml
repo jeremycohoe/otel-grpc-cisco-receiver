@@ -18,6 +18,7 @@ receivers:
       enable_rfc_parser: true
       cache_modules: true
       max_modules: 1000
+      models_dir: ./yang-models
 
 processors:
   batch:
