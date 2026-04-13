@@ -18,7 +18,7 @@ Cisco IOS XE Switch ──gRPC dial-out (kvGPB)──▶ OTEL Collector (cisco-o
 - **Two-Pass Key Propagation**: YANG list keys (interface name, process name, sensor ID, etc.) are automatically attached as attributes on all sibling metrics, enabling `BY interface_name` grouping in Splunk/Prometheus
 - **mTLS / TLS**: Standard OTel `configtls.ServerConfig` — cert files, client CA, min TLS version, reload interval
 - **Internal Observability**: 8 OTel SDK metrics (messages received, bytes, errors, active connections, processing time, YANG cache hits/misses, metrics produced)
-- **Splunk Dashboard**: Pre-built 30-panel Splunk dashboard with multi-switch support
+- **Splunk Dashboards**: 7 Dashboard Studio dashboards covering infrastructure, network, routing, power, security, and telemetry health
 - **Backend Agnostic**: Works with any OTel Collector exporter
 
 ## Supported YANG Modules (28)
@@ -127,16 +127,24 @@ telemetry ietf subscription 109
 
 A complete set of 21 subscriptions is in [`c9300x-mdt-subscriptions.cfg`](c9300x-mdt-subscriptions.cfg). Update the receiver IP address and apply to your switch.
 
-### 5. Import the Splunk Dashboard
+### 5. Import the Splunk Dashboards
 
 ```bash
-curl -sk -u admin:Cisco123 \
-  'https://localhost:8089/servicesNS/admin/search/data/ui/views/cisco_mdt_overview' \
-  -X POST \
-  --data-urlencode "eai:data@splunk-dashboards/cisco_mdt_overview.xml"
+./scripts/import-dashboards.sh
 ```
 
-The dashboard is at http://\<host\>:8000 → **Cisco IOS XE - Model Driven Telemetry**.
+Or import manually via the Splunk REST API:
+
+```bash
+for f in splunk-dashboards/cisco_mdt_*.json; do
+  name=$(basename "$f" .json)
+  curl -sk -u admin:Cisco123 \
+    "https://localhost:8089/servicesNS/admin/search/data/ui/views/${name}" \
+    -X POST --data-urlencode "eai:data@${f}"
+done
+```
+
+The 7 dashboards are at http://\<host\>:8000 → Search & Reporting → Dashboards:
 
 ### Verification
 
@@ -230,8 +238,14 @@ When `tls` is omitted the server runs plaintext — useful for lab environments.
 │   ├── CONFIG.md                      # Full configuration reference
 │   ├── SECURITY.md                    # TLS / mTLS setup guide
 │   └── TELEMETRY-CAPTURE.md           # Capture & validation workflow ←
-├── splunk-dashboards/                 # Pre-built Splunk dashboard XML
-│   └── cisco_mdt_overview.xml         # 30-panel dashboard with multi-switch support
+├── splunk-dashboards/                 # Dashboard Studio JSON (7 dashboards)
+│   ├── cisco_mdt_overview.json        # Overview — gauges, device identity, navigation
+│   ├── cisco_mdt_infrastructure.json  # CPU, memory, DRAM, environment, stack, HA
+│   ├── cisco_mdt_network.json         # Interfaces, VLANs, STP, ARP, MAC, CDP, LLDP
+│   ├── cisco_mdt_routing.json         # BGP, OSPF, RIB/FIB, VRF, DHCP, NTP
+│   ├── cisco_mdt_power.json           # PoE budget, modules, ports, PSU, fans
+│   ├── cisco_mdt_security.json        # 802.1X, TrustSec, ACLs, MACsec, TCAM
+│   └── cisco_mdt_telemetry.json       # MDT subscriptions, data volume, connections
 ├── capture-config.yaml                # Per-subscription capture config (file exporter)
 ├── parse-capture.py                   # Parse captured telemetry into readable formats
 ├── configure-mdt.py                   # Push MDT subscriptions to switches via SSH
@@ -244,29 +258,21 @@ When `tls` is omitted the server runs plaintext — useful for lab environments.
 └── collector-config.yaml              # Collector pipeline config
 ```
 
-## Splunk Dashboard
+## Splunk Dashboards
 
-The included dashboard provides 30 panels across 18 rows:
+Seven Dashboard Studio (JSON) dashboards covering all telemetry subscriptions:
 
-| Row | Panels |
-|-----|--------|
-| Device Overview | Software version, boot time, reboot reason, hardware inventory |
-| CPU | Utilization over time (5s/1m/5m), current gauge |
-| Process Memory | Top processes by allocated memory, allocated vs freed |
-| Environment | Sensor readings (temperature, fan, power) |
-| Interfaces | Throughput (Rx/Tx Kbps), packet rates |
-| ARP + CDP | ARP entry count, CDP neighbors |
-| MATM + LLDP | MAC address table, LLDP neighbors |
-| Platform | Component temperature readings |
-| MDT Health | Subscription state and update counts |
-| PoE | Per-port power consumption |
-| Per-Process CPU | Individual process CPU usage |
-| System DRAM | Total/used/free memory in GB |
-| STP | Spanning tree instance and port state |
-| Stack | Stack member roles and health |
-| VLANs + 802.1X | VLAN list, EAPOL statistics |
-| Switchport + Transceiver | Port mode/VLAN, optics status |
-| Software Install | Installed packages by switch |
+| Dashboard | Panels | Key Data |
+|-----------|--------|----------|
+| **Overview** | Device identity, CPU/Memory/PoE gauges, throughput trend, navigation | Entry point with links to all category dashboards |
+| **Infrastructure** | CPU utilization, per-process CPU, memory pools, DRAM, temp, fans, PSU, stack, HA | Subs 1001–1005, 1009, 1016, 1023, 1028 |
+| **Network** | Interface throughput/errors/rates, VLANs, STP, ARP, MAC, CDP, LLDP, switchport | Subs 1007–1008, 1010–1014, 1017 |
+| **Routing** | BGP, OSPF, RIB/FIB counts, VRF, adjacency, routes, DHCP relay, NTP | Subs 1024–1027, 1033, 1042, 1046 |
+| **Power & PoE** | PoE budget gauge, module/port detail, PSU readings, temperature, fan RPM | Subs 1005–1006 |
+| **Security** | 802.1X EAPOL, TrustSec, ACL types/match, MACsec, MKA, TCAM, dataplane resources | Subs 1020–1021, 1030, 1032, 1041, 1043, 1141 |
+| **Telemetry Health** | MDT connections, subscription state, data volume, system limits, punt/inject | Subs 1022, 1043–1044 |
+
+All dashboards use a consistent switch selector dropdown and time range picker. Import them with `./scripts/import-dashboards.sh` or via `start-splunk.sh` (auto-imports on fresh Splunk setup).
 
 ## Data Flow
 

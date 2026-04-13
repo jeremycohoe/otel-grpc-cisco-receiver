@@ -1,0 +1,224 @@
+{
+  "visualizations": {
+    "viz_bgp_afi": {
+      "type": "splunk.table",
+      "title": "BGP Address Families",
+      "dataSources": { "primary": "ds_bgp_afi" },
+      "options": { "count": 30 }
+    },
+    "viz_bgp_rd": {
+      "type": "splunk.table",
+      "title": "BGP Route Distinguishers",
+      "dataSources": { "primary": "ds_bgp_rd" },
+      "options": { "count": 20 }
+    },
+    "viz_ospf_state": {
+      "type": "splunk.table",
+      "title": "OSPF Operational Mode",
+      "dataSources": { "primary": "ds_ospf_state" },
+      "options": { "count": 10 }
+    },
+    "viz_rib_counts": {
+      "type": "splunk.table",
+      "title": "RIB Route Counts",
+      "dataSources": { "primary": "ds_rib_counts" },
+      "options": { "count": 20 }
+    },
+    "viz_fib_summary": {
+      "type": "splunk.table",
+      "title": "FIB Prefix Summary",
+      "dataSources": { "primary": "ds_fib_summary" },
+      "options": { "count": 10 }
+    },
+    "viz_fib_vrf": {
+      "type": "splunk.table",
+      "title": "FIB VRF / Address Family",
+      "dataSources": { "primary": "ds_fib_vrf" },
+      "options": { "count": 20 }
+    },
+    "viz_adjacency": {
+      "type": "splunk.table",
+      "title": "Adjacency Table Summary",
+      "dataSources": { "primary": "ds_adjacency" },
+      "options": { "count": 10 }
+    },
+    "viz_ipv4_routes": {
+      "type": "splunk.table",
+      "title": "IPv4 Route Table",
+      "dataSources": { "primary": "ds_ipv4_routes" },
+      "options": { "count": 50 }
+    },
+    "viz_ipv6_routes": {
+      "type": "splunk.table",
+      "title": "IPv6 Route Table",
+      "dataSources": { "primary": "ds_ipv6_routes" },
+      "options": { "count": 50 }
+    },
+    "viz_vrf_table": {
+      "type": "splunk.table",
+      "title": "VRF Entries",
+      "dataSources": { "primary": "ds_vrf_table" },
+      "options": { "count": 20 }
+    },
+    "viz_dhcp_stats": {
+      "type": "splunk.table",
+      "title": "DHCPv6 Relay Binding Stats",
+      "dataSources": { "primary": "ds_dhcp_stats" },
+      "options": { "count": 10 }
+    },
+    "viz_ntp_status": {
+      "type": "splunk.table",
+      "title": "NTP Status",
+      "dataSources": { "primary": "ds_ntp_status" },
+      "options": { "count": 10 }
+    },
+    "viz_ntp_peers": {
+      "type": "splunk.table",
+      "title": "NTP Peer Associations",
+      "dataSources": { "primary": "ds_ntp_peers" },
+      "options": { "count": 20 }
+    }
+  },
+  "dataSources": {
+    "ds_switch_list": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats count(\"cisco.content.five-seconds\") as c WHERE index=cisco_mdt BY cisco.node_id | rename cisco.node_id as label | eval value=label | fields label value | sort label",
+        "queryParameters": { "earliest": "-4h@m", "latest": "now" }
+      }
+    },
+    "ds_bgp_afi": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.bgp-route-vrfs.bgp-route-vrf.bgp-route-afs.bgp-route-af.afi-safi_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as \"AFI/SAFI\" | table Switch \"AFI/SAFI\" | sort Switch \"AFI/SAFI\"",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_bgp_rd": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.bgp-route-rds.bgp-route-rd.rd-value_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as \"Route Distinguisher\" | table Switch \"Route Distinguisher\" | sort Switch",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_ospf_state": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.ospf-state.op-mode_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as \"OSPF Mode\" | table Switch \"OSPF Mode\" | sort Switch",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_rib_counts": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.rib-ipv4-ni.num-entries\") as \"IPv4 Entries\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id | append [| mstats latest(\"cisco.content.rib-ipv6-ni.num-entries\") as \"IPv6 Entries\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id] | stats values(\"IPv4 Entries\") as \"IPv4 Entries\" values(\"IPv6 Entries\") as \"IPv6 Entries\" BY cisco.node_id | rename cisco.node_id as Switch | sort Switch",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_fib_summary": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.fib-ni-entry.num-pfx\") as \"Total Prefixes\" latest(\"cisco.content.fib-ni-entry.num-pfx-fwd\") as Forwarding latest(\"cisco.content.fib-ni-entry.num-pfx-non-fwd\") as \"Non-Forwarding\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id | rename cisco.node_id as Switch | sort Switch",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_fib_vrf": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.fib-ni-entry.instance-name_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as \"VRF:AF Instance\" | table Switch \"VRF:AF Instance\" | sort Switch",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_adjacency": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.adjacency-table.num-adjacencies\") as Total latest(\"cisco.content.adjacency-table.num-complete-adjacencies\") as Complete latest(\"cisco.content.adjacency-table.num-incomplete-adjacencies\") as Incomplete WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id | rename cisco.node_id as Switch | sort Switch",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_ipv4_routes": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.fib-ni-entry.fib-entries.ip-addr_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | where NOT match(value, \":\") | rename cisco.node_id as Switch value as \"IPv4 Prefix\" | table Switch \"IPv4 Prefix\" | sort Switch \"IPv4 Prefix\"",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_ipv6_routes": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.fib-ni-entry.fib-entries.ip-addr_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | where match(value, \":\") | rename cisco.node_id as Switch value as \"IPv6 Prefix\" | table Switch \"IPv6 Prefix\" | sort Switch \"IPv6 Prefix\"",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_vrf_table": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.address-family-entry.address-family_info\") as af_flag latest(\"cisco.content.interface_info\") as intf_flag WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as VRF | table Switch VRF | sort Switch VRF",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_dhcp_stats": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.dhcpv6-relay-binding-stats.bndg-cnt\") as \"Binding Count\" latest(\"cisco.content.dhcpv6-relay-binding-stats.iana-bndg-cnt\") as \"IANA Bindings\" latest(\"cisco.content.dhcpv6-relay-binding-stats.iapd-bndg-cnt\") as \"IAPD Bindings\" latest(\"cisco.content.dhcpv6-relay-binding-stats.bulk-lq-bndg-cnt\") as \"Bulk Lease Query\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id | rename cisco.node_id as Switch | sort Switch",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_ntp_status": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.stratum\") as Stratum latest(\"cisco.content.offset\") as \"Offset (ms)\" latest(\"cisco.content.root-delay\") as \"Root Delay\" latest(\"cisco.content.root-disp\") as \"Root Dispersion\" latest(\"cisco.content.freq-drift-ppm\") as \"Drift (ppm)\" latest(\"cisco.content.sys-poll\") as \"Poll Interval\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id | rename cisco.node_id as Switch | sort Switch",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_ntp_peers": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.ntp-associations.peer-stratum\") as Stratum latest(\"cisco.content.ntp-associations.delay\") as Delay latest(\"cisco.content.ntp-associations.jitter\") as Jitter latest(\"cisco.content.ntp-associations.offset\") as Offset latest(\"cisco.content.ntp-associations.poll\") as Poll latest(\"cisco.content.ntp-associations.peer-reach\") as Reach WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id assoc-id | rename cisco.node_id as Switch assoc-id as \"Assoc ID\" | sort Switch \"Assoc ID\"",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": { "queryParameters": { "earliest": "-4h@m", "latest": "now" } }
+      }
+    }
+  },
+  "inputs": {
+    "input_switch": {
+      "type": "input.dropdown",
+      "options": { "items": [{ "label": "All Switches", "value": "*" }], "defaultValue": "*", "token": "switch_node" },
+      "title": "Switch",
+      "dataSources": { "primary": "ds_switch_list" }
+    },
+    "input_time": {
+      "type": "input.timerange",
+      "options": { "token": "global_time", "defaultValue": "-4h@m,now" },
+      "title": "Time Range"
+    }
+  },
+  "layout": {
+    "type": "grid",
+    "options": { "width": 1440, "height": 3600 },
+    "structure": [
+      { "item": "viz_bgp_afi", "type": "block", "position": { "x": 0, "y": 0, "w": 720, "h": 300 } },
+      { "item": "viz_bgp_rd", "type": "block", "position": { "x": 720, "y": 0, "w": 720, "h": 300 } },
+      { "item": "viz_ospf_state", "type": "block", "position": { "x": 0, "y": 310, "w": 480, "h": 200 } },
+      { "item": "viz_rib_counts", "type": "block", "position": { "x": 480, "y": 310, "w": 960, "h": 200 } },
+      { "item": "viz_fib_summary", "type": "block", "position": { "x": 0, "y": 520, "w": 720, "h": 200 } },
+      { "item": "viz_fib_vrf", "type": "block", "position": { "x": 720, "y": 520, "w": 720, "h": 200 } },
+      { "item": "viz_adjacency", "type": "block", "position": { "x": 0, "y": 730, "w": 1440, "h": 200 } },
+      { "item": "viz_ipv4_routes", "type": "block", "position": { "x": 0, "y": 940, "w": 720, "h": 350 } },
+      { "item": "viz_ipv6_routes", "type": "block", "position": { "x": 720, "y": 940, "w": 720, "h": 350 } },
+      { "item": "viz_vrf_table", "type": "block", "position": { "x": 0, "y": 1300, "w": 720, "h": 250 } },
+      { "item": "viz_dhcp_stats", "type": "block", "position": { "x": 720, "y": 1300, "w": 720, "h": 250 } },
+      { "item": "viz_ntp_status", "type": "block", "position": { "x": 0, "y": 1560, "w": 1440, "h": 200 } },
+      { "item": "viz_ntp_peers", "type": "block", "position": { "x": 0, "y": 1770, "w": 1440, "h": 300 } }
+    ],
+    "globalInputs": ["input_switch", "input_time"]
+  },
+  "title": "Cisco IOS XE — Routing",
+  "description": "BGP, OSPF, RIB/FIB, VRF, DHCP, NTP"
+}

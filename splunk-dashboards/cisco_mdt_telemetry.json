@@ -1,0 +1,147 @@
+{
+  "visualizations": {
+    "viz_conn_state": {
+      "type": "splunk.table",
+      "title": "MDT Connection State",
+      "dataSources": { "primary": "ds_conn_state" },
+      "options": { "count": 10 }
+    },
+    "viz_sub_health": {
+      "type": "splunk.table",
+      "title": "MDT Subscription Health",
+      "dataSources": { "primary": "ds_sub_health" },
+      "options": { "count": 50 }
+    },
+    "viz_data_volume": {
+      "type": "splunk.area",
+      "title": "Telemetry Data Volume Over Time",
+      "dataSources": { "primary": "ds_data_volume" },
+      "options": {
+        "yAxisTitleText": "Data Points",
+        "legendDisplay": "bottom",
+        "stackMode": "stacked"
+      }
+    },
+    "viz_subs_max": {
+      "type": "splunk.singlevalue",
+      "title": "Max Subscriptions",
+      "dataSources": { "primary": "ds_subs_max" },
+      "options": { "underLabel": "Platform Limit" }
+    },
+    "viz_subs_valid": {
+      "type": "splunk.singlevalue",
+      "title": "Valid Subscriptions",
+      "dataSources": { "primary": "ds_subs_valid" },
+      "options": {
+        "majorColor": "#1A9035",
+        "underLabel": "Active & Valid"
+      }
+    },
+    "viz_sub_by_path": {
+      "type": "splunk.table",
+      "title": "Data Points by Subscription & Encoding Path",
+      "dataSources": { "primary": "ds_sub_by_path" },
+      "options": { "count": 50 }
+    },
+    "viz_punt_inject": {
+      "type": "splunk.table",
+      "title": "Punt/Inject CPU Queue Stats",
+      "dataSources": { "primary": "ds_punt_inject" },
+      "options": { "count": 30 }
+    }
+  },
+  "dataSources": {
+    "ds_switch_list": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats count(\"cisco.content.five-seconds\") as c WHERE index=cisco_mdt BY cisco.node_id | rename cisco.node_id as label | eval value=label | fields label value | sort label",
+        "queryParameters": { "earliest": "-4h@m", "latest": "now" }
+      }
+    },
+    "ds_conn_state": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.mdt-connections.conn-id.port\") as Port latest(\"cisco.content.mdt-connections.index\") as \"Conn Index\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id | rename cisco.node_id as Switch | append [| mstats latest(\"cisco.content.mdt-connections.state_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as \"Connection State\" | fields Switch \"Connection State\"] | append [| mstats latest(\"cisco.content.mdt-connections.peer-id_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as \"Peer ID\" | fields Switch \"Peer ID\"] | append [| mstats latest(\"cisco.content.mdt-connections.conn-id.source-address_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as \"Source IP\" | fields Switch \"Source IP\"] | stats values(Port) as Port values(\"Conn Index\") as \"Conn Index\" values(\"Connection State\") as State values(\"Peer ID\") as \"Peer ID\" values(\"Source IP\") as \"Source IP\" BY Switch | sort Switch",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_sub_health": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats count(\"cisco.content.five-seconds\") as dp WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.subscription_id cisco.encoding_path cisco.node_id | rename cisco.subscription_id as \"Sub ID\" cisco.encoding_path as \"Encoding Path\" cisco.node_id as Switch | sort Switch \"Sub ID\" | table Switch \"Sub ID\" \"Encoding Path\" dp | rename dp as \"Data Points\"",
+        "queryParameters": { "earliest": "$global_time.earliest$", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_data_volume": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats count(\"cisco.content.five-seconds\") as c WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.encoding_path span=5m | chart limit=15 sum(c) BY _time cisco.encoding_path",
+        "queryParameters": { "earliest": "$global_time.earliest$", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_subs_max": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.mdt-system-status.subs-max-num\") as max_subs WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id | stats max(max_subs) as max_subs",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_subs_valid": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.mdt-system-status.subs-valid-num\") as valid_subs WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id | stats max(valid_subs) as valid_subs",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_sub_by_path": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats count(\"cisco.content.five-seconds\") as dp WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.subscription_id cisco.encoding_path cisco.node_id | rename cisco.subscription_id as \"Sub ID\" cisco.encoding_path as \"YANG Path\" cisco.node_id as Switch dp as \"Data Points\" | sort Switch \"Sub ID\"",
+        "queryParameters": { "earliest": "-1h@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_punt_inject": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.cpu-punt-queue-name_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as \"CPU Queue\" | table Switch \"CPU Queue\" | sort Switch \"CPU Queue\"",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": { "queryParameters": { "earliest": "-4h@m", "latest": "now" } }
+      }
+    }
+  },
+  "inputs": {
+    "input_switch": {
+      "type": "input.dropdown",
+      "options": { "items": [{ "label": "All Switches", "value": "*" }], "defaultValue": "*", "token": "switch_node" },
+      "title": "Switch",
+      "dataSources": { "primary": "ds_switch_list" }
+    },
+    "input_time": {
+      "type": "input.timerange",
+      "options": { "token": "global_time", "defaultValue": "-4h@m,now" },
+      "title": "Time Range"
+    }
+  },
+  "layout": {
+    "type": "grid",
+    "options": { "width": 1440, "height": 2400 },
+    "structure": [
+      { "item": "viz_subs_max", "type": "block", "position": { "x": 0, "y": 0, "w": 360, "h": 200 } },
+      { "item": "viz_subs_valid", "type": "block", "position": { "x": 360, "y": 0, "w": 360, "h": 200 } },
+      { "item": "viz_conn_state", "type": "block", "position": { "x": 720, "y": 0, "w": 720, "h": 200 } },
+      { "item": "viz_data_volume", "type": "block", "position": { "x": 0, "y": 210, "w": 1440, "h": 300 } },
+      { "item": "viz_sub_health", "type": "block", "position": { "x": 0, "y": 520, "w": 1440, "h": 400 } },
+      { "item": "viz_sub_by_path", "type": "block", "position": { "x": 0, "y": 930, "w": 1440, "h": 400 } },
+      { "item": "viz_punt_inject", "type": "block", "position": { "x": 0, "y": 1340, "w": 1440, "h": 300 } }
+    ],
+    "globalInputs": ["input_switch", "input_time"]
+  },
+  "title": "Cisco IOS XE — Telemetry Health",
+  "description": "MDT Subscription State, Data Volume, Connections, Punt/Inject"
+}

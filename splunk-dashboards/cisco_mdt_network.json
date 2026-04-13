@@ -1,0 +1,266 @@
+{
+  "visualizations": {
+    "viz_intf_throughput": {
+      "type": "splunk.area",
+      "title": "Interface Throughput (In/Out Octets)",
+      "dataSources": { "primary": "ds_intf_throughput" },
+      "options": {
+        "yAxisTitleText": "Bytes",
+        "legendDisplay": "bottom",
+        "stackMode": "stacked",
+        "nullValueMode": "zero"
+      }
+    },
+    "viz_intf_errors": {
+      "type": "splunk.table",
+      "title": "Interface Status & Errors",
+      "dataSources": { "primary": "ds_intf_errors" },
+      "options": { "count": 50 }
+    },
+    "viz_intf_rx_tx_kbps": {
+      "type": "splunk.line",
+      "title": "Interface Rx/Tx Rate (kbps)",
+      "dataSources": { "primary": "ds_intf_rx_tx_kbps" },
+      "options": {
+        "yAxisTitleText": "kbps",
+        "legendDisplay": "bottom"
+      }
+    },
+    "viz_intf_pps": {
+      "type": "splunk.line",
+      "title": "Interface Packet Rate (pps)",
+      "dataSources": { "primary": "ds_intf_pps" },
+      "options": {
+        "yAxisTitleText": "Packets/s",
+        "legendDisplay": "bottom"
+      }
+    },
+    "viz_vlan_table": {
+      "type": "splunk.table",
+      "title": "VLAN Inventory",
+      "dataSources": { "primary": "ds_vlan_table" },
+      "options": { "count": 30 }
+    },
+    "viz_stp_changes": {
+      "type": "splunk.line",
+      "title": "STP Topology Changes Over Time",
+      "dataSources": { "primary": "ds_stp_changes" },
+      "options": {
+        "yAxisTitleText": "Changes",
+        "legendDisplay": "bottom"
+      }
+    },
+    "viz_stp_root": {
+      "type": "splunk.table",
+      "title": "STP Root Bridge Info",
+      "dataSources": { "primary": "ds_stp_root" },
+      "options": { "count": 20 }
+    },
+    "viz_arp_table": {
+      "type": "splunk.table",
+      "title": "ARP Table",
+      "dataSources": { "primary": "ds_arp_table" },
+      "options": { "count": 50 }
+    },
+    "viz_mac_table": {
+      "type": "splunk.table",
+      "title": "MAC Address Table",
+      "dataSources": { "primary": "ds_mac_table" },
+      "options": { "count": 30 }
+    },
+    "viz_mac_count": {
+      "type": "splunk.singlevalue",
+      "title": "Total MAC Entries",
+      "dataSources": { "primary": "ds_mac_count" },
+      "options": { "underLabel": "Learned Addresses" }
+    },
+    "viz_cdp_table": {
+      "type": "splunk.table",
+      "title": "CDP Neighbors",
+      "dataSources": { "primary": "ds_cdp_table" },
+      "options": { "count": 20 }
+    },
+    "viz_lldp_status": {
+      "type": "splunk.table",
+      "title": "LLDP Status",
+      "dataSources": { "primary": "ds_lldp_status" },
+      "options": { "count": 10 }
+    },
+    "viz_lldp_intfs": {
+      "type": "splunk.table",
+      "title": "LLDP Enabled Interfaces",
+      "dataSources": { "primary": "ds_lldp_intfs" },
+      "options": { "count": 50 }
+    },
+    "viz_switchport_pie": {
+      "type": "splunk.pie",
+      "title": "Switchport Mode Distribution",
+      "dataSources": { "primary": "ds_switchport_pie" },
+      "options": { "legendDisplay": "right" }
+    },
+    "viz_switchport_table": {
+      "type": "splunk.table",
+      "title": "Switchport Interfaces",
+      "dataSources": { "primary": "ds_switchport_table" },
+      "options": { "count": 50 }
+    }
+  },
+  "dataSources": {
+    "ds_switch_list": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats count(\"cisco.content.five-seconds\") as c WHERE index=cisco_mdt BY cisco.node_id | rename cisco.node_id as label | eval value=label | fields label value | sort label",
+        "queryParameters": { "earliest": "-4h@m", "latest": "now" }
+      }
+    },
+    "ds_intf_throughput": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats avg(\"cisco.content.statistics.in-octets\") as in_octets avg(\"cisco.content.statistics.out-octets\") as out_octets WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY name span=5m | where NOT match(name, \"Null0|Loopback\") | chart limit=10 avg(in_octets) as \"In Octets\" avg(out_octets) as \"Out Octets\" BY _time name",
+        "queryParameters": { "earliest": "$global_time.earliest$", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_intf_errors": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.statistics.in-errors\") as \"In Errors\" latest(\"cisco.content.statistics.out-errors\") as \"Out Errors\" latest(\"cisco.content.statistics.in-octets\") as \"In Octets\" latest(\"cisco.content.statistics.out-octets\") as \"Out Octets\" latest(\"cisco.content.statistics.in-discards\") as \"In Discards\" latest(\"cisco.content.speed\") as Speed WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY name | where NOT match(name, \"Null0|Loopback|Vlan\") | rename name as Interface | sort -\"In Octets\" | table Interface Speed \"In Octets\" \"Out Octets\" \"In Errors\" \"Out Errors\" \"In Discards\"",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_intf_rx_tx_kbps": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats avg(\"cisco.content.statistics.rx-kbps\") as rx avg(\"cisco.content.statistics.tx-kbps\") as tx WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY name span=5m | where NOT match(name, \"Null0|Loopback\") | where rx > 0 OR tx > 0 | chart limit=10 avg(rx) as Rx avg(tx) as Tx BY _time name",
+        "queryParameters": { "earliest": "$global_time.earliest$", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_intf_pps": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats avg(\"cisco.content.statistics.rx-pps\") as rx avg(\"cisco.content.statistics.tx-pps\") as tx WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY name span=5m | where NOT match(name, \"Null0|Loopback\") | where rx > 0 OR tx > 0 | chart limit=10 avg(rx) as \"Rx pps\" avg(tx) as \"Tx pps\" BY _time name",
+        "queryParameters": { "earliest": "$global_time.earliest$", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_vlan_table": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.vlan-interfaces.subinterface\") as Subinterfaces WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY id cisco.node_id | rename cisco.node_id as Switch id as \"VLAN ID\" | table Switch \"VLAN ID\" Subinterfaces | sort Switch \"VLAN ID\"",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_stp_changes": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats avg(\"cisco.content.stp-detail.topology-changes\") as changes WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY instance span=5m",
+        "queryParameters": { "earliest": "$global_time.earliest$", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_stp_root": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.stp-detail.root-cost\") as \"Root Cost\" latest(\"cisco.content.stp-detail.designated-root-priority\") as \"Root Priority\" latest(\"cisco.content.stp-detail.topology-changes\") as \"Topo Changes\" latest(\"cisco.content.stp-detail.bridge-priority\") as \"Bridge Priority\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY instance cisco.node_id | rename cisco.node_id as Switch instance as Instance | table Switch Instance \"Root Priority\" \"Root Cost\" \"Bridge Priority\" \"Topo Changes\" | sort Switch Instance",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_arp_table": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.arp-entry.address_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id vrf value | rename cisco.node_id as Switch vrf as VRF value as \"IP Address\" | append [| mstats latest(\"cisco.content.arp-entry.hardware_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id vrf value | rename cisco.node_id as Switch vrf as VRF value as \"MAC Address\" | fields Switch VRF \"MAC Address\"] | append [| mstats latest(\"cisco.content.arp-entry.interface_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id vrf value | rename cisco.node_id as Switch vrf as VRF value as Interface | fields Switch VRF Interface] | stats values(\"IP Address\") as \"IP Address\" values(\"MAC Address\") as \"MAC Address\" values(Interface) as Interface BY Switch VRF | sort Switch VRF",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_mac_table": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.matm-mac-entry.mac_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id table-type value | rename cisco.node_id as Switch table-type as \"Table Type\" value as \"MAC Address\" | table Switch \"Table Type\" \"MAC Address\" | sort Switch \"Table Type\"",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_mac_count": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.matm-mac-entry.mac_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | stats dc(value) as count",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_cdp_table": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.device-name_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id device-id value | rename cisco.node_id as Switch device-id as \"Device ID\" value as \"Device Name\" | append [| mstats latest(\"cisco.content.local-intf-name_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id device-id value | rename cisco.node_id as Switch device-id as \"Device ID\" value as \"Local Interface\" | fields Switch \"Device ID\" \"Local Interface\"] | append [| mstats latest(\"cisco.content.port-id_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id device-id value | rename cisco.node_id as Switch device-id as \"Device ID\" value as \"Remote Port\" | fields Switch \"Device ID\" \"Remote Port\"] | append [| mstats latest(\"cisco.content.platform-name_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id device-id value | rename cisco.node_id as Switch device-id as \"Device ID\" value as Platform | fields Switch \"Device ID\" Platform] | append [| mstats latest(\"cisco.content.mgmt-address_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id device-id value | rename cisco.node_id as Switch device-id as \"Device ID\" value as \"Mgmt IP\" | fields Switch \"Device ID\" \"Mgmt IP\"] | stats values(\"Device Name\") as \"Device Name\" values(\"Local Interface\") as \"Local Intf\" values(\"Remote Port\") as \"Remote Port\" values(Platform) as Platform values(\"Mgmt IP\") as \"Mgmt IP\" BY Switch \"Device ID\" | sort Switch \"Device ID\"",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_lldp_status": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.lldp-state-details.enabled\") as Enabled latest(\"cisco.content.lldp-state-details.frame-in\") as \"Frames In\" latest(\"cisco.content.lldp-state-details.frame-out\") as \"Frames Out\" latest(\"cisco.content.lldp-state-details.entries-aged-out\") as \"Aged Out\" latest(\"cisco.content.lldp-state-details.frame-error-in\") as \"Frame Errors\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id | rename cisco.node_id as Switch | sort Switch",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_lldp_intfs": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.lldp-intf-details.if-name_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as Interface | table Switch Interface | sort Switch Interface",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_switchport_pie": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.port-details.oper-mode_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | stats count BY value | rename value as Mode",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_switchport_table": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.keys.if-name_info\") as if_flag latest(\"cisco.content.admin-mode_info\") as admin_flag latest(\"cisco.content.port-details.oper-mode_info\") as oper_flag latest(\"cisco.content.port-details.access-mode-id\") as \"Access VLAN\" latest(\"cisco.content.port-details.trunk-nat-mode-id\") as \"Native VLAN\" WHERE index=cisco_mdt cisco.encoding_path=\"Cisco-IOS-XE-switchport-oper*\" cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as Interface | table Switch Interface \"Access VLAN\" \"Native VLAN\" | sort Switch Interface",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": { "queryParameters": { "earliest": "-4h@m", "latest": "now" } }
+      }
+    }
+  },
+  "inputs": {
+    "input_switch": {
+      "type": "input.dropdown",
+      "options": { "items": [{ "label": "All Switches", "value": "*" }], "defaultValue": "*", "token": "switch_node" },
+      "title": "Switch",
+      "dataSources": { "primary": "ds_switch_list" }
+    },
+    "input_time": {
+      "type": "input.timerange",
+      "options": { "token": "global_time", "defaultValue": "-4h@m,now" },
+      "title": "Time Range"
+    }
+  },
+  "layout": {
+    "type": "grid",
+    "options": { "width": 1440, "height": 4200 },
+    "structure": [
+      { "item": "viz_intf_throughput", "type": "block", "position": { "x": 0, "y": 0, "w": 1440, "h": 300 } },
+      { "item": "viz_intf_rx_tx_kbps", "type": "block", "position": { "x": 0, "y": 310, "w": 720, "h": 300 } },
+      { "item": "viz_intf_pps", "type": "block", "position": { "x": 720, "y": 310, "w": 720, "h": 300 } },
+      { "item": "viz_intf_errors", "type": "block", "position": { "x": 0, "y": 620, "w": 1440, "h": 350 } },
+      { "item": "viz_vlan_table", "type": "block", "position": { "x": 0, "y": 980, "w": 720, "h": 300 } },
+      { "item": "viz_stp_changes", "type": "block", "position": { "x": 720, "y": 980, "w": 720, "h": 300 } },
+      { "item": "viz_stp_root", "type": "block", "position": { "x": 0, "y": 1290, "w": 1440, "h": 250 } },
+      { "item": "viz_arp_table", "type": "block", "position": { "x": 0, "y": 1550, "w": 1440, "h": 300 } },
+      { "item": "viz_mac_table", "type": "block", "position": { "x": 0, "y": 1860, "w": 1080, "h": 300 } },
+      { "item": "viz_mac_count", "type": "block", "position": { "x": 1080, "y": 1860, "w": 360, "h": 300 } },
+      { "item": "viz_cdp_table", "type": "block", "position": { "x": 0, "y": 2170, "w": 1440, "h": 300 } },
+      { "item": "viz_lldp_status", "type": "block", "position": { "x": 0, "y": 2480, "w": 720, "h": 250 } },
+      { "item": "viz_lldp_intfs", "type": "block", "position": { "x": 720, "y": 2480, "w": 720, "h": 250 } },
+      { "item": "viz_switchport_pie", "type": "block", "position": { "x": 0, "y": 2740, "w": 480, "h": 300 } },
+      { "item": "viz_switchport_table", "type": "block", "position": { "x": 480, "y": 2740, "w": 960, "h": 300 } }
+    ],
+    "globalInputs": ["input_switch", "input_time"]
+  },
+  "title": "Cisco IOS XE — Network",
+  "description": "Interfaces, VLANs, STP, ARP, MAC, LLDP, CDP, Switchport"
+}

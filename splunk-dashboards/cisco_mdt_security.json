@@ -1,0 +1,182 @@
+{
+  "visualizations": {
+    "viz_eapol_table": {
+      "type": "splunk.table",
+      "title": "802.1X / EAPOL Statistics",
+      "dataSources": { "primary": "ds_eapol_table" },
+      "options": { "count": 10 }
+    },
+    "viz_trustsec_table": {
+      "type": "splunk.table",
+      "title": "TrustSec Environment Data",
+      "dataSources": { "primary": "ds_trustsec_table" },
+      "options": { "count": 10 }
+    },
+    "viz_acl_types": {
+      "type": "splunk.table",
+      "title": "ACL Types",
+      "dataSources": { "primary": "ds_acl_types" },
+      "options": { "count": 20 }
+    },
+    "viz_acl_match": {
+      "type": "splunk.table",
+      "title": "ACL Match Counters",
+      "dataSources": { "primary": "ds_acl_match" },
+      "options": { "count": 30 }
+    },
+    "viz_macsec_table": {
+      "type": "splunk.table",
+      "title": "MACsec Statistics",
+      "dataSources": { "primary": "ds_macsec_table" },
+      "options": { "count": 20 }
+    },
+    "viz_mka_table": {
+      "type": "splunk.table",
+      "title": "MKA Statistics",
+      "dataSources": { "primary": "ds_mka_table" },
+      "options": { "count": 20 }
+    },
+    "viz_tcam_table": {
+      "type": "splunk.table",
+      "title": "TCAM Utilization",
+      "dataSources": { "primary": "ds_tcam_table" },
+      "options": { "count": 10 }
+    },
+    "viz_tcam_names": {
+      "type": "splunk.table",
+      "title": "TCAM Table Names",
+      "dataSources": { "primary": "ds_tcam_names" },
+      "options": { "count": 20 }
+    },
+    "viz_dp_resources": {
+      "type": "splunk.table",
+      "title": "Dataplane Resource Utilization",
+      "dataSources": { "primary": "ds_dp_resources" },
+      "options": { "count": 30 }
+    },
+    "viz_dp_features": {
+      "type": "splunk.table",
+      "title": "Dataplane Feature List",
+      "dataSources": { "primary": "ds_dp_features" },
+      "options": { "count": 30 }
+    }
+  },
+  "dataSources": {
+    "ds_switch_list": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats count(\"cisco.content.five-seconds\") as c WHERE index=cisco_mdt BY cisco.node_id | rename cisco.node_id as label | eval value=label | fields label value | sort label",
+        "queryParameters": { "earliest": "-4h@m", "latest": "now" }
+      }
+    },
+    "ds_eapol_table": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.dot1x-global-stats.eapol-rx\") as \"EAPOL Rx\" latest(\"cisco.content.dot1x-global-stats.eapol-tx\") as \"EAPOL Tx\" latest(\"cisco.content.dot1x-global-stats.eapol-rx-start\") as \"Rx Start\" latest(\"cisco.content.dot1x-global-stats.eapol-rx-logoff\") as \"Rx Logoff\" latest(\"cisco.content.dot1x-global-stats.eapol-rx-resp-id\") as \"Rx Resp-ID\" latest(\"cisco.content.dot1x-global-stats.eapol-rx-resp\") as \"Rx Response\" latest(\"cisco.content.dot1x-global-stats.eapol-rx-invalid\") as \"Rx Invalid\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id | rename cisco.node_id as Switch | sort Switch",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_trustsec_table": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.cts-env-data.device-sgt\") as \"Device SGT\" latest(\"cisco.content.cts-env-data.life-time\") as \"Lifetime\" latest(\"cisco.content.cts-env-data.total-num-servers\") as \"Total Servers\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id | rename cisco.node_id as Switch | append [| mstats latest(\"cisco.content.cts-env-data.status_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as Status | fields Switch Status] | append [| mstats latest(\"cisco.content.cts-env-data.last-updated-time_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as \"Last Updated\" | fields Switch \"Last Updated\"] | stats values(\"Device SGT\") as \"Device SGT\" values(Lifetime) as Lifetime values(\"Total Servers\") as Servers values(Status) as Status values(\"Last Updated\") as \"Last Updated\" BY Switch | sort Switch",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_acl_types": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.access-control-list-type_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as \"ACL Type\" | table Switch \"ACL Type\" | sort Switch \"ACL Type\"",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_acl_match": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.access-list-entries.access-list-entry.access-list-entries-oper-data.match-counter\") as \"Match Count\" latest(\"cisco.content.access-list-entries.access-list-entry.rule-name\") as \"Rule #\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id | rename cisco.node_id as Switch | sort Switch -\"Match Count\"",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_macsec_table": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.rx-badtag-pkts\") as \"Rx Bad Tag\" latest(\"cisco.content.rx-nosci-pkts\") as \"Rx No SCI\" latest(\"cisco.content.tx-encrypted-pkts\") as \"Tx Encrypted\" latest(\"cisco.content.tx-protected-pkts\") as \"Tx Protected\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id | rename cisco.node_id as Switch | sort Switch",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_mka_table": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.mkpdu-stats-rx\") as \"MKPDU Rx\" latest(\"cisco.content.mkpdu-stats-rx-distcak\") as \"Rx DistCAK\" latest(\"cisco.content.mkpdu-stats-tx-distcak\") as \"Tx DistCAK\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id | rename cisco.node_id as Switch | sort Switch",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_tcam_table": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.tcam-entries-used\") as \"TCAM Used\" latest(\"cisco.content.tcam-entries-max\") as \"TCAM Max\" latest(\"cisco.content.hash-entries-used\") as \"Hash Used\" latest(\"cisco.content.hash-entries-max\") as \"Hash Max\" WHERE index=cisco_mdt cisco.encoding_path=\"Cisco-IOS-XE-tcam-oper*\" cisco.node_id=\"$switch_node$\" BY cisco.node_id | eval \"TCAM %\"=round('TCAM Used'/'TCAM Max'*100, 1) | eval \"Hash %\"=round('Hash Used'/'Hash Max'*100, 1) | rename cisco.node_id as Switch | table Switch \"TCAM Used\" \"TCAM Max\" \"TCAM %\" \"Hash Used\" \"Hash Max\" \"Hash %\" | sort Switch",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_tcam_names": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.keys.name_info\") as m WHERE index=cisco_mdt cisco.encoding_path=\"Cisco-IOS-XE-tcam-oper*\" cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as \"TCAM Table\" | table Switch \"TCAM Table\" | sort Switch \"TCAM Table\"",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_dp_resources": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.instance-list.table-data.resource-usage.percentage-used\") as \"Used %\" latest(\"cisco.content.instance-list.table-data.resource-usage.entries-used\") as \"Entries Used\" latest(\"cisco.content.instance-list.table-data.resource-usage.max-entries\") as \"Max Entries\" latest(\"cisco.content.instance-list.table-data.resource-usage.total-entries-free\") as Free WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id | rename cisco.node_id as Switch | sort Switch -\"Used %\"",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_dp_features": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.shared-ftr-list.ftr-info.feature_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as Feature | table Switch Feature | sort Switch Feature",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": { "queryParameters": { "earliest": "-4h@m", "latest": "now" } }
+      }
+    }
+  },
+  "inputs": {
+    "input_switch": {
+      "type": "input.dropdown",
+      "options": { "items": [{ "label": "All Switches", "value": "*" }], "defaultValue": "*", "token": "switch_node" },
+      "title": "Switch",
+      "dataSources": { "primary": "ds_switch_list" }
+    },
+    "input_time": {
+      "type": "input.timerange",
+      "options": { "token": "global_time", "defaultValue": "-4h@m,now" },
+      "title": "Time Range"
+    }
+  },
+  "layout": {
+    "type": "grid",
+    "options": { "width": 1440, "height": 3000 },
+    "structure": [
+      { "item": "viz_eapol_table", "type": "block", "position": { "x": 0, "y": 0, "w": 1440, "h": 200 } },
+      { "item": "viz_trustsec_table", "type": "block", "position": { "x": 0, "y": 210, "w": 1440, "h": 200 } },
+      { "item": "viz_acl_types", "type": "block", "position": { "x": 0, "y": 420, "w": 480, "h": 300 } },
+      { "item": "viz_acl_match", "type": "block", "position": { "x": 480, "y": 420, "w": 960, "h": 300 } },
+      { "item": "viz_macsec_table", "type": "block", "position": { "x": 0, "y": 730, "w": 720, "h": 200 } },
+      { "item": "viz_mka_table", "type": "block", "position": { "x": 720, "y": 730, "w": 720, "h": 200 } },
+      { "item": "viz_tcam_table", "type": "block", "position": { "x": 0, "y": 940, "w": 960, "h": 200 } },
+      { "item": "viz_tcam_names", "type": "block", "position": { "x": 960, "y": 940, "w": 480, "h": 200 } },
+      { "item": "viz_dp_resources", "type": "block", "position": { "x": 0, "y": 1150, "w": 720, "h": 300 } },
+      { "item": "viz_dp_features", "type": "block", "position": { "x": 720, "y": 1150, "w": 720, "h": 300 } }
+    ],
+    "globalInputs": ["input_switch", "input_time"]
+  },
+  "title": "Cisco IOS XE — Security",
+  "description": "802.1X, TrustSec, ACLs, MACsec, MKA, TCAM, Dataplane Resources"
+}

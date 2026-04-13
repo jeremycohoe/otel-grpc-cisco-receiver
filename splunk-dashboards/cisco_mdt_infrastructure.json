@@ -1,0 +1,339 @@
+{
+  "visualizations": {
+    "viz_cpu_time": {
+      "type": "splunk.line",
+      "title": "CPU Utilization Over Time",
+      "dataSources": { "primary": "ds_cpu_time" },
+      "options": {
+        "xAxisTitleText": "Time",
+        "yAxisTitleText": "CPU %",
+        "legendDisplay": "bottom",
+        "nullValueMode": "connect"
+      }
+    },
+    "viz_cpu_gauge": {
+      "type": "splunk.singlevalue",
+      "title": "CPU (5-Sec Current)",
+      "dataSources": { "primary": "ds_cpu_gauge" },
+      "options": {
+        "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+        "majorColorEditorConfig": [
+          { "value": "#1A9035", "to": 50 },
+          { "value": "#CBA700", "from": 50, "to": 75 },
+          { "value": "#D94E17", "from": 75, "to": 90 },
+          { "value": "#D41F1F", "from": 90 }
+        ],
+        "backgroundColor": "> majorValue | rangeValue(backgroundColorEditorConfig)",
+        "backgroundColorEditorConfig": [
+          { "value": "#1A9035", "to": 50 },
+          { "value": "#CBA700", "from": 50, "to": 75 },
+          { "value": "#D94E17", "from": 75, "to": 90 },
+          { "value": "#D41F1F", "from": 90 }
+        ],
+        "unit": "%",
+        "underLabel": "5-Second Average"
+      }
+    },
+    "viz_top_proc_cpu": {
+      "type": "splunk.bar",
+      "title": "Top 10 Processes by CPU (5-Sec Avg)",
+      "dataSources": { "primary": "ds_top_proc_cpu" },
+      "options": {
+        "xAxisTitleText": "Process",
+        "yAxisTitleText": "CPU %",
+        "legendDisplay": "none"
+      }
+    },
+    "viz_proc_cpu_time": {
+      "type": "splunk.line",
+      "title": "Per-Process CPU Over Time (Top 5)",
+      "dataSources": { "primary": "ds_proc_cpu_time" },
+      "options": {
+        "yAxisTitleText": "CPU %",
+        "legendDisplay": "bottom"
+      }
+    },
+    "viz_mem_pool": {
+      "type": "splunk.table",
+      "title": "Memory Pool Usage",
+      "dataSources": { "primary": "ds_mem_pool" },
+      "options": { "count": 10 }
+    },
+    "viz_mem_pool_names": {
+      "type": "splunk.table",
+      "title": "Memory Pool Names",
+      "dataSources": { "primary": "ds_mem_pool_names" },
+      "options": { "count": 10 }
+    },
+    "viz_top_proc_mem": {
+      "type": "splunk.bar",
+      "title": "Top 10 Processes by Memory (Holding)",
+      "dataSources": { "primary": "ds_top_proc_mem" },
+      "options": {
+        "xAxisTitleText": "Process",
+        "yAxisTitleText": "Holding Memory (MB)",
+        "legendDisplay": "none"
+      }
+    },
+    "viz_proc_mem_time": {
+      "type": "splunk.line",
+      "title": "Process Memory: Allocated vs Freed (Top 5)",
+      "dataSources": { "primary": "ds_proc_mem_time" },
+      "options": {
+        "yAxisTitleText": "Memory (GB)",
+        "legendDisplay": "bottom"
+      }
+    },
+    "viz_dram_pct": {
+      "type": "splunk.line",
+      "title": "System DRAM Usage (%)",
+      "dataSources": { "primary": "ds_dram_pct" },
+      "options": {
+        "yAxisTitleText": "%",
+        "legendDisplay": "bottom"
+      }
+    },
+    "viz_dram_table": {
+      "type": "splunk.table",
+      "title": "System DRAM Detail",
+      "dataSources": { "primary": "ds_dram_table" },
+      "options": { "count": 10 }
+    },
+    "viz_temp_chart": {
+      "type": "splunk.line",
+      "title": "Temperature Sensors Over Time",
+      "dataSources": { "primary": "ds_temp_chart" },
+      "options": {
+        "yAxisTitleText": "Celsius",
+        "legendDisplay": "bottom"
+      }
+    },
+    "viz_psu_table": {
+      "type": "splunk.table",
+      "title": "Power Supply Status",
+      "dataSources": { "primary": "ds_psu_table" },
+      "options": { "count": 10 }
+    },
+    "viz_fan_table": {
+      "type": "splunk.table",
+      "title": "Fan Status",
+      "dataSources": { "primary": "ds_fan_table" },
+      "options": { "count": 10 }
+    },
+    "viz_stack_table": {
+      "type": "splunk.table",
+      "title": "Stack Member Status",
+      "dataSources": { "primary": "ds_stack_table" },
+      "options": { "count": 10 }
+    },
+    "viz_stack_keepalive": {
+      "type": "splunk.line",
+      "title": "Stack Keepalive Counters",
+      "dataSources": { "primary": "ds_stack_keepalive" },
+      "options": {
+        "yAxisTitleText": "Count",
+        "legendDisplay": "bottom"
+      }
+    },
+    "viz_hw_inventory": {
+      "type": "splunk.table",
+      "title": "Hardware Inventory",
+      "dataSources": { "primary": "ds_hw_inventory" },
+      "options": { "count": 20 }
+    },
+    "viz_install_version": {
+      "type": "splunk.table",
+      "title": "Software Install Info",
+      "dataSources": { "primary": "ds_install_version" },
+      "options": { "count": 10 }
+    },
+    "viz_ha_state": {
+      "type": "splunk.table",
+      "title": "High Availability State",
+      "dataSources": { "primary": "ds_ha_state" },
+      "options": { "count": 10 }
+    }
+  },
+  "dataSources": {
+    "ds_switch_list": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats count(\"cisco.content.five-seconds\") as c WHERE index=cisco_mdt BY cisco.node_id | rename cisco.node_id as label | eval value=label | fields label value | sort label",
+        "queryParameters": { "earliest": "-4h@m", "latest": "now" }
+      }
+    },
+    "ds_cpu_time": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats avg(\"cisco.content.five-seconds\") as \"5 Sec\" avg(\"cisco.content.one-minute\") as \"1 Min\" avg(\"cisco.content.five-minutes\") as \"5 Min\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id span=5m",
+        "queryParameters": { "earliest": "$global_time.earliest$", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_cpu_gauge": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.five-seconds\") as cpu_5sec WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" span=5m | tail 1",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_top_proc_cpu": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.cpu-usage-processes.cpu-usage-process.five-seconds\") as cpu WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY name | sort -cpu | head 10 | rename name as Process | fields Process cpu",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_proc_cpu_time": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats avg(\"cisco.content.cpu-usage-processes.cpu-usage-process.five-seconds\") as cpu WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY name span=5m | eventstats max(cpu) as peak BY name | sort -peak | where peak > 0 | head 200 | chart limit=5 avg(cpu) BY _time name",
+        "queryParameters": { "earliest": "$global_time.earliest$", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_mem_pool": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.total-memory\") as \"Total (MB)\" latest(\"cisco.content.used-memory\") as \"Used (MB)\" latest(\"cisco.content.free-memory\") as \"Free (MB)\" latest(\"cisco.content.lowest-usage\") as \"Lowest Ever (MB)\" WHERE index=cisco_mdt cisco.encoding_path=\"Cisco-IOS-XE-memory-oper:memory-statistics/memory-statistic\" cisco.node_id=\"$switch_node$\" BY cisco.node_id name | eval \"Total (MB)\"=round('Total (MB)'/1048576, 1) | eval \"Used (MB)\"=round('Used (MB)'/1048576, 1) | eval \"Free (MB)\"=round('Free (MB)'/1048576, 1) | eval \"Lowest Ever (MB)\"=round('Lowest Ever (MB)'/1048576, 1) | eval \"Used %\"=round('Used (MB)'/('Total (MB)')*100, 1) | rename cisco.node_id as Switch name as Pool | sort Switch Pool",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_mem_pool_names": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.keys.name_info\") as m WHERE index=cisco_mdt cisco.encoding_path=\"Cisco-IOS-XE-memory-oper*\" cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as \"Pool Name\" | table Switch \"Pool Name\" | sort Switch \"Pool Name\"",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_top_proc_mem": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.holding-memory\") as holding_memory WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY name | eval holding_memory_mb = round(holding_memory / 1048576, 2) | sort -holding_memory_mb | head 10 | rename name as Process | fields Process holding_memory_mb",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_proc_mem_time": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.allocated-memory\") as allocated latest(\"cisco.content.freed-memory\") as freed WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY name span=5m | eval \"Allocated (GB)\" = round(allocated / 1073741824, 2) | eval \"Freed (GB)\" = round(freed / 1073741824, 2) | fields _time name \"Allocated (GB)\" \"Freed (GB)\" | sort -\"Allocated (GB)\" | rename name as Process",
+        "queryParameters": { "earliest": "$global_time.earliest$", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_dram_pct": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats avg(\"cisco.content.memory-stats.used-percent\") as \"Used %\" avg(\"cisco.content.memory-stats.free-percent\") as \"Free %\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id span=5m",
+        "queryParameters": { "earliest": "$global_time.earliest$", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_dram_table": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.memory-stats.used-percent\") as \"Used %\" latest(\"cisco.content.memory-stats.total\") as total_kb latest(\"cisco.content.memory-stats.free-number\") as free_kb latest(\"cisco.content.memory-stats.used-number\") as used_kb latest(\"cisco.content.memory-stats.committed-percent\") as \"Committed %\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY fru cisco.node_id | eval \"Total (GB)\"=round(total_kb/1048576, 2) | eval \"Used (GB)\"=round(used_kb/1048576, 2) | eval \"Free (GB)\"=round(free_kb/1048576, 2) | rename cisco.node_id as Switch fru as FRU | table Switch FRU \"Total (GB)\" \"Used (GB)\" \"Free (GB)\" \"Used %\" \"Committed %\" | sort Switch FRU",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_temp_chart": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats avg(\"cisco.content.environment-sensor.current-reading\") as reading WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY name span=5m | where match(name, \"(?i)temp\") | chart limit=10 avg(reading) BY _time name",
+        "queryParameters": { "earliest": "$global_time.earliest$", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_psu_table": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.environment-sensor.current-reading\") as \"Reading (W)\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY name location cisco.node_id | where match(name, \"(?i)power supply\") | rename name as \"Power Supply\" location as Location cisco.node_id as Switch | table Switch \"Power Supply\" Location \"Reading (W)\" | sort Switch \"Power Supply\"",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_fan_table": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.environment-sensor.current-reading\") as \"Reading (RPM)\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY name location cisco.node_id | where match(name, \"(?i)fan\") | rename name as Fan location as Location cisco.node_id as Switch | table Switch Fan Location \"Reading (RPM)\" | sort Switch Fan",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_stack_table": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.stack-node.chassis-number\") as \"Chassis\" latest(\"cisco.content.stack-node.latency\") as \"Latency\" latest(\"cisco.content.stack-node.interface-mtu\") as \"MTU\" latest(\"cisco.content.stack-node.mac-persistency-wait-time\") as \"MAC Persist Wait\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY chassis-number cisco.node_id | rename cisco.node_id as Switch chassis-number as \"Chassis #\" | table Switch \"Chassis #\" Chassis Latency MTU \"MAC Persist Wait\" | sort Switch \"Chassis #\"",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_stack_keepalive": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats avg(\"cisco.content.stack-node.keepalive-counters.sent\") as Sent avg(\"cisco.content.stack-node.keepalive-counters.received\") as Received avg(\"cisco.content.stack-node.keepalive-counters.sent-failure\") as Failed WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY chassis-number span=5m",
+        "queryParameters": { "earliest": "$global_time.earliest$", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_hw_inventory": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.device-inventory.hw-description_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id hw-type hw-dev-index value | rename cisco.node_id as Switch hw-type as \"HW Type\" hw-dev-index as Index value as Description | fields Switch \"HW Type\" Index Description | append [| mstats latest(\"cisco.content.device-inventory.part-number_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id hw-type hw-dev-index value | rename cisco.node_id as Switch hw-type as \"HW Type\" hw-dev-index as Index value as \"Part Number\" | fields Switch \"HW Type\" Index \"Part Number\"] | append [| mstats latest(\"cisco.content.device-inventory.serial-number_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id hw-type hw-dev-index value | rename cisco.node_id as Switch hw-type as \"HW Type\" hw-dev-index as Index value as \"Serial Number\" | fields Switch \"HW Type\" Index \"Serial Number\"] | stats values(Description) as Description values(\"Part Number\") as \"Part Number\" values(\"Serial Number\") as \"Serial Number\" BY Switch \"HW Type\" Index | sort Switch \"HW Type\" Index",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_install_version": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.install-location-information.install-version-info.version_info\") as v WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as Version | table Switch Version | sort Switch",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_ha_state": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.ha-enabled\") as \"HA Enabled\" latest(\"cisco.content.switchover-count\") as \"Switchover Count\" latest(\"cisco.content.standby-failure-count\") as \"Standby Failures\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id | rename cisco.node_id as Switch | append [| mstats latest(\"cisco.content.ha-state_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as \"HA State\" | fields Switch \"HA State\"] | append [| mstats latest(\"cisco.content.last-switchover-reason_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as \"Last Switchover Reason\" | fields Switch \"Last Switchover Reason\"] | stats values(\"HA Enabled\") as \"HA Enabled\" values(\"Switchover Count\") as \"Switchovers\" values(\"Standby Failures\") as \"Standby Failures\" values(\"HA State\") as \"HA State\" values(\"Last Switchover Reason\") as \"Last Switchover\" BY Switch | sort Switch",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": { "queryParameters": { "earliest": "-4h@m", "latest": "now" } }
+      }
+    }
+  },
+  "inputs": {
+    "input_switch": {
+      "type": "input.dropdown",
+      "options": { "items": [{ "label": "All Switches", "value": "*" }], "defaultValue": "*", "token": "switch_node" },
+      "title": "Switch",
+      "dataSources": { "primary": "ds_switch_list" }
+    },
+    "input_time": {
+      "type": "input.timerange",
+      "options": { "token": "global_time", "defaultValue": "-4h@m,now" },
+      "title": "Time Range"
+    }
+  },
+  "layout": {
+    "type": "grid",
+    "options": { "width": 1440, "height": 3800 },
+    "structure": [
+      { "item": "viz_cpu_time", "type": "block", "position": { "x": 0, "y": 0, "w": 960, "h": 300 } },
+      { "item": "viz_cpu_gauge", "type": "block", "position": { "x": 960, "y": 0, "w": 480, "h": 300 } },
+      { "item": "viz_top_proc_cpu", "type": "block", "position": { "x": 0, "y": 310, "w": 720, "h": 300 } },
+      { "item": "viz_proc_cpu_time", "type": "block", "position": { "x": 720, "y": 310, "w": 720, "h": 300 } },
+      { "item": "viz_mem_pool", "type": "block", "position": { "x": 0, "y": 620, "w": 960, "h": 250 } },
+      { "item": "viz_mem_pool_names", "type": "block", "position": { "x": 960, "y": 620, "w": 480, "h": 250 } },
+      { "item": "viz_top_proc_mem", "type": "block", "position": { "x": 0, "y": 880, "w": 720, "h": 300 } },
+      { "item": "viz_proc_mem_time", "type": "block", "position": { "x": 720, "y": 880, "w": 720, "h": 300 } },
+      { "item": "viz_dram_pct", "type": "block", "position": { "x": 0, "y": 1190, "w": 720, "h": 300 } },
+      { "item": "viz_dram_table", "type": "block", "position": { "x": 720, "y": 1190, "w": 720, "h": 300 } },
+      { "item": "viz_temp_chart", "type": "block", "position": { "x": 0, "y": 1500, "w": 1440, "h": 300 } },
+      { "item": "viz_psu_table", "type": "block", "position": { "x": 0, "y": 1810, "w": 720, "h": 250 } },
+      { "item": "viz_fan_table", "type": "block", "position": { "x": 720, "y": 1810, "w": 720, "h": 250 } },
+      { "item": "viz_stack_table", "type": "block", "position": { "x": 0, "y": 2070, "w": 720, "h": 250 } },
+      { "item": "viz_stack_keepalive", "type": "block", "position": { "x": 720, "y": 2070, "w": 720, "h": 250 } },
+      { "item": "viz_hw_inventory", "type": "block", "position": { "x": 0, "y": 2330, "w": 1440, "h": 350 } },
+      { "item": "viz_install_version", "type": "block", "position": { "x": 0, "y": 2690, "w": 720, "h": 200 } },
+      { "item": "viz_ha_state", "type": "block", "position": { "x": 720, "y": 2690, "w": 720, "h": 200 } }
+    ],
+    "globalInputs": ["input_switch", "input_time"]
+  },
+  "title": "Cisco IOS XE — Infrastructure",
+  "description": "CPU, Memory, DRAM, Environment, Stack, Hardware, HA"
+}

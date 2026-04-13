@@ -38,6 +38,13 @@ for i in $(seq 1 60); do
       -d name=cisco_mdt \
       -d datatype=metric >/dev/null 2>&1 && echo "Index cisco_mdt created" || echo "Index may already exist"
 
+    # Import Dashboard Studio dashboards
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    if [[ -x "$SCRIPT_DIR/scripts/import-dashboards.sh" ]]; then
+      echo "Importing dashboards..."
+      "$SCRIPT_DIR/scripts/import-dashboards.sh" https://localhost:8089 admin "$SPLUNK_PASSWORD"
+    fi
+
     echo "Splunk ready."
     exit 0
   fi

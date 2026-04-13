@@ -1,0 +1,202 @@
+{
+  "visualizations": {
+    "viz_poe_budget_gauge": {
+      "type": "splunk.singlevalue",
+      "title": "PoE Budget Utilization",
+      "dataSources": { "primary": "ds_poe_budget_gauge" },
+      "options": {
+        "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+        "majorColorEditorConfig": [
+          { "value": "#1A9035", "to": 50 },
+          { "value": "#CBA700", "from": 50, "to": 75 },
+          { "value": "#D94E17", "from": 75, "to": 90 },
+          { "value": "#D41F1F", "from": 90 }
+        ],
+        "backgroundColor": "> majorValue | rangeValue(backgroundColorEditorConfig)",
+        "backgroundColorEditorConfig": [
+          { "value": "#1A9035", "to": 50 },
+          { "value": "#CBA700", "from": 50, "to": 75 },
+          { "value": "#D94E17", "from": 75, "to": 90 },
+          { "value": "#D41F1F", "from": 90 }
+        ],
+        "unit": "%",
+        "underLabel": "Power Utilization"
+      }
+    },
+    "viz_poe_summary": {
+      "type": "splunk.table",
+      "title": "PoE Power Summary",
+      "dataSources": { "primary": "ds_poe_summary" },
+      "options": { "count": 10 }
+    },
+    "viz_psu_budget": {
+      "type": "splunk.table",
+      "title": "PSU Power Budget (Watts)",
+      "dataSources": { "primary": "ds_psu_budget" },
+      "options": { "count": 10 }
+    },
+    "viz_poe_module": {
+      "type": "splunk.table",
+      "title": "PoE Module Details",
+      "dataSources": { "primary": "ds_poe_module" },
+      "options": { "count": 10 }
+    },
+    "viz_poe_ports": {
+      "type": "splunk.table",
+      "title": "PoE Port Details",
+      "dataSources": { "primary": "ds_poe_ports" },
+      "options": { "count": 50 }
+    },
+    "viz_temp_chart": {
+      "type": "splunk.line",
+      "title": "Temperature Sensors Over Time",
+      "dataSources": { "primary": "ds_temp_chart" },
+      "options": {
+        "yAxisTitleText": "Celsius",
+        "legendDisplay": "bottom"
+      }
+    },
+    "viz_psu_table": {
+      "type": "splunk.table",
+      "title": "Power Supply Readings",
+      "dataSources": { "primary": "ds_psu_table" },
+      "options": { "count": 10 }
+    },
+    "viz_psu_platform": {
+      "type": "splunk.table",
+      "title": "Power Supply Detail (Platform)",
+      "dataSources": { "primary": "ds_psu_platform" },
+      "options": { "count": 10 }
+    },
+    "viz_fan_table": {
+      "type": "splunk.table",
+      "title": "Fan Status (RPM)",
+      "dataSources": { "primary": "ds_fan_table" },
+      "options": { "count": 10 }
+    },
+    "viz_fan_platform": {
+      "type": "splunk.table",
+      "title": "Fan Detail (Platform)",
+      "dataSources": { "primary": "ds_fan_platform" },
+      "options": { "count": 10 }
+    }
+  },
+  "dataSources": {
+    "ds_switch_list": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats count(\"cisco.content.five-seconds\") as c WHERE index=cisco_mdt BY cisco.node_id | rename cisco.node_id as label | eval value=label | fields label value | sort label",
+        "queryParameters": { "earliest": "-4h@m", "latest": "now" }
+      }
+    },
+    "ds_poe_budget_gauge": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.consumed-poe-power\") as consumed latest(\"cisco.content.power-budget\") as budget WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id | eval pct=if(budget>0, round(consumed/budget*100, 1), 0) | stats avg(pct) as pct",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_poe_summary": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.consumed-poe-power\") as \"Consumed (W)\" latest(\"cisco.content.power-budget\") as \"Budget (W)\" latest(\"cisco.content.unused-power\") as \"Unused (W)\" latest(\"cisco.content.total-power\") as \"Total (W)\" latest(\"cisco.content.rsvd-power\") as \"Reserved (W)\" latest(\"cisco.content.alloc-power\") as \"Allocated (W)\" latest(\"cisco.content.num-ps\") as \"Power Supplies\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id | rename cisco.node_id as Switch | sort Switch",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_psu_budget": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.poe-switch.ps-a\") as \"PSU-A Capacity\" latest(\"cisco.content.poe-switch.ps-b\") as \"PSU-B Capacity\" latest(\"cisco.content.poe-switch.power-budget\") as \"PoE Budget\" latest(\"cisco.content.poe-switch.consumed-poe-power\") as \"PoE Consumed\" latest(\"cisco.content.poe-switch.consumed-system-power\") as \"System Power\" latest(\"cisco.content.poe-switch.available-power\") as Available WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id | rename cisco.node_id as Switch | eval \"PSU-B Status\"=if('PSU-B Capacity'>0, \"Connected\", \"Not Installed\") | sort Switch",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_poe_module": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.poe-module.available-power\") as \"Available (W)\" latest(\"cisco.content.poe-module.used-power\") as \"Used (W)\" latest(\"cisco.content.poe-module.remaining-power\") as \"Remaining (W)\" latest(\"cisco.content.poe-module.num-ports\") as \"Total Ports\" latest(\"cisco.content.poe-module.used-ports\") as \"Used Ports\" latest(\"cisco.content.poe-module.free-ports\") as \"Free Ports\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id | rename cisco.node_id as Switch | sort Switch",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_poe_ports": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.poe-port-detail.intf-name_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as Interface | append [| mstats latest(\"cisco.content.poe-port-detail.oper-power\") as \"Oper Power (mW)\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id intf-name | rename cisco.node_id as Switch intf-name as Interface | fields Switch Interface \"Oper Power (mW)\"] | append [| mstats latest(\"cisco.content.poe-port-detail.power-used\") as \"Power Used (mW)\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id intf-name | rename cisco.node_id as Switch intf-name as Interface | fields Switch Interface \"Power Used (mW)\"] | append [| mstats latest(\"cisco.content.poe-port-detail.device-detected\") as \"Device Detected\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id intf-name | rename cisco.node_id as Switch intf-name as Interface | fields Switch Interface \"Device Detected\"] | stats values(Interface) as Interface values(\"Oper Power (mW)\") as \"Oper Power (mW)\" values(\"Power Used (mW)\") as \"Power Used (mW)\" values(\"Device Detected\") as \"Device Detected\" BY Switch | sort Switch Interface",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_temp_chart": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats avg(\"cisco.content.environment-sensor.current-reading\") as reading WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY name span=5m | where match(name, \"(?i)temp\") | chart limit=10 avg(reading) BY _time name",
+        "queryParameters": { "earliest": "$global_time.earliest$", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_psu_table": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.environment-sensor.current-reading\") as \"Reading (W)\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY name location cisco.node_id | where match(name, \"(?i)power supply\") | rename name as \"Power Supply\" location as Location cisco.node_id as Switch | table Switch \"Power Supply\" Location \"Reading (W)\" | sort Switch",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_psu_platform": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.state.empty\") as empty latest(\"cisco.content.state.removable\") as removable latest(\"cisco.content.state.alloc-pwr\") as \"Alloc Power\" latest(\"cisco.content.state.used-pwr\") as \"Used Power\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id cname | where match(cname, \"^PowerSupply[0-9]\") | eval Inserted=if(empty==0, \"Yes\", \"No\") | rename cisco.node_id as Switch cname as Slot | table Switch Slot Inserted \"Alloc Power\" \"Used Power\" | sort Switch Slot",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_fan_table": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.environment-sensor.current-reading\") as \"Reading (RPM)\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY name location cisco.node_id | where match(name, \"(?i)fan\") | rename name as Fan location as Location cisco.node_id as Switch | table Switch Fan Location \"Reading (RPM)\" | sort Switch Fan",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_fan_platform": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.state.empty\") as empty latest(\"cisco.content.state.removable\") as removable WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id cname | where match(cname, \"(?i)fan\") | eval Inserted=if(empty==0, \"Yes\", \"No\") | rename cisco.node_id as Switch cname as \"Fan Tray\" | table Switch \"Fan Tray\" Inserted removable | sort Switch \"Fan Tray\"",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": { "queryParameters": { "earliest": "-4h@m", "latest": "now" } }
+      }
+    }
+  },
+  "inputs": {
+    "input_switch": {
+      "type": "input.dropdown",
+      "options": { "items": [{ "label": "All Switches", "value": "*" }], "defaultValue": "*", "token": "switch_node" },
+      "title": "Switch",
+      "dataSources": { "primary": "ds_switch_list" }
+    },
+    "input_time": {
+      "type": "input.timerange",
+      "options": { "token": "global_time", "defaultValue": "-4h@m,now" },
+      "title": "Time Range"
+    }
+  },
+  "layout": {
+    "type": "grid",
+    "options": { "width": 1440, "height": 3200 },
+    "structure": [
+      { "item": "viz_poe_budget_gauge", "type": "block", "position": { "x": 0, "y": 0, "w": 480, "h": 250 } },
+      { "item": "viz_poe_summary", "type": "block", "position": { "x": 480, "y": 0, "w": 960, "h": 250 } },
+      { "item": "viz_psu_budget", "type": "block", "position": { "x": 0, "y": 260, "w": 1440, "h": 250 } },
+      { "item": "viz_poe_module", "type": "block", "position": { "x": 0, "y": 520, "w": 1440, "h": 200 } },
+      { "item": "viz_poe_ports", "type": "block", "position": { "x": 0, "y": 730, "w": 1440, "h": 400 } },
+      { "item": "viz_temp_chart", "type": "block", "position": { "x": 0, "y": 1140, "w": 1440, "h": 300 } },
+      { "item": "viz_psu_table", "type": "block", "position": { "x": 0, "y": 1450, "w": 720, "h": 250 } },
+      { "item": "viz_psu_platform", "type": "block", "position": { "x": 720, "y": 1450, "w": 720, "h": 250 } },
+      { "item": "viz_fan_table", "type": "block", "position": { "x": 0, "y": 1710, "w": 720, "h": 250 } },
+      { "item": "viz_fan_platform", "type": "block", "position": { "x": 720, "y": 1710, "w": 720, "h": 250 } }
+    ],
+    "globalInputs": ["input_switch", "input_time"]
+  },
+  "title": "Cisco IOS XE — Power & PoE",
+  "description": "PoE Budget, Module Details, Port Power, PSU, Temperature, Fans"
+}

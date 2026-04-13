@@ -1,0 +1,249 @@
+{
+  "visualizations": {
+    "viz_device_overview": {
+      "type": "splunk.table",
+      "title": "Device Overview",
+      "dataSources": { "primary": "ds_device_overview" },
+      "options": { "count": 10 }
+    },
+    "viz_cpu_gauge": {
+      "type": "splunk.singlevalue",
+      "title": "CPU (5-Sec)",
+      "dataSources": { "primary": "ds_cpu_gauge" },
+      "options": {
+        "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+        "majorColorEditorConfig": [
+          { "value": "#1A9035", "to": 50 },
+          { "value": "#CBA700", "from": 50, "to": 75 },
+          { "value": "#D94E17", "from": 75, "to": 90 },
+          { "value": "#D41F1F", "from": 90 }
+        ],
+        "backgroundColor": "> majorValue | rangeValue(backgroundColorEditorConfig)",
+        "backgroundColorEditorConfig": [
+          { "value": "#1A9035", "to": 50 },
+          { "value": "#CBA700", "from": 50, "to": 75 },
+          { "value": "#D94E17", "from": 75, "to": 90 },
+          { "value": "#D41F1F", "from": 90 }
+        ],
+        "unit": "%",
+        "underLabel": "5-Second Average"
+      }
+    },
+    "viz_mem_gauge": {
+      "type": "splunk.singlevalue",
+      "title": "Memory Used",
+      "dataSources": { "primary": "ds_mem_gauge" },
+      "options": {
+        "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+        "majorColorEditorConfig": [
+          { "value": "#1A9035", "to": 60 },
+          { "value": "#CBA700", "from": 60, "to": 80 },
+          { "value": "#D94E17", "from": 80, "to": 95 },
+          { "value": "#D41F1F", "from": 95 }
+        ],
+        "backgroundColor": "> majorValue | rangeValue(backgroundColorEditorConfig)",
+        "backgroundColorEditorConfig": [
+          { "value": "#1A9035", "to": 60 },
+          { "value": "#CBA700", "from": 60, "to": 80 },
+          { "value": "#D94E17", "from": 80, "to": 95 },
+          { "value": "#D41F1F", "from": 95 }
+        ],
+        "unit": "%",
+        "underLabel": "Processor Pool"
+      }
+    },
+    "viz_poe_gauge": {
+      "type": "splunk.singlevalue",
+      "title": "PoE Budget",
+      "dataSources": { "primary": "ds_poe_gauge" },
+      "options": {
+        "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+        "majorColorEditorConfig": [
+          { "value": "#1A9035", "to": 50 },
+          { "value": "#CBA700", "from": 50, "to": 75 },
+          { "value": "#D94E17", "from": 75, "to": 90 },
+          { "value": "#D41F1F", "from": 90 }
+        ],
+        "backgroundColor": "> majorValue | rangeValue(backgroundColorEditorConfig)",
+        "backgroundColorEditorConfig": [
+          { "value": "#1A9035", "to": 50 },
+          { "value": "#CBA700", "from": 50, "to": 75 },
+          { "value": "#D94E17", "from": 75, "to": 90 },
+          { "value": "#D41F1F", "from": 90 }
+        ],
+        "unit": "%",
+        "underLabel": "Power Utilization"
+      }
+    },
+    "viz_cpu_trend": {
+      "type": "splunk.line",
+      "title": "CPU Utilization Over Time",
+      "dataSources": { "primary": "ds_cpu_trend" },
+      "options": {
+        "xAxisTitleText": "Time",
+        "yAxisTitleText": "CPU %",
+        "legendDisplay": "bottom",
+        "nullValueMode": "connect"
+      }
+    },
+    "viz_intf_throughput": {
+      "type": "splunk.area",
+      "title": "Top Interface Throughput (Bytes)",
+      "dataSources": { "primary": "ds_intf_throughput" },
+      "options": {
+        "xAxisTitleText": "Time",
+        "yAxisTitleText": "Bytes",
+        "legendDisplay": "bottom",
+        "stackMode": "stacked",
+        "nullValueMode": "zero"
+      }
+    },
+    "viz_env_temp": {
+      "type": "splunk.table",
+      "title": "Environment Sensors",
+      "dataSources": { "primary": "ds_env_temp" },
+      "options": { "count": 20 }
+    },
+    "viz_nav_links": {
+      "type": "splunk.markdown",
+      "options": {
+        "markdown": "### Detailed Dashboards\n\n| Dashboard | Description |\n|-----------|-------------|\n| [Infrastructure](/app/search/cisco_mdt_infrastructure) | CPU, Memory, DRAM, Environment, Stack, Hardware, HA |\n| [Network](/app/search/cisco_mdt_network) | Interfaces, VLANs, STP, ARP, MAC, LLDP, CDP |\n| [Routing](/app/search/cisco_mdt_routing) | BGP, OSPF, RIB/FIB, VRF, DHCP, NTP |\n| [Power & PoE](/app/search/cisco_mdt_power) | PoE Budget, Modules, Port Detail, PSU, Sensors |\n| [Security](/app/search/cisco_mdt_security) | 802.1X, TrustSec, MACsec, MKA, ACLs, TCAM |\n| [Telemetry Health](/app/search/cisco_mdt_telemetry) | MDT Subscriptions, Data Volume, Connections |"
+      }
+    }
+  },
+  "dataSources": {
+    "ds_switch_list": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats count(\"cisco.content.five-seconds\") as c WHERE index=cisco_mdt BY cisco.node_id | rename cisco.node_id as label | eval value=label | fields label value | sort label",
+        "queryParameters": {
+          "earliest": "-4h@m",
+          "latest": "now"
+        }
+      }
+    },
+    "ds_device_overview": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.device-system-data.software-version_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as \"Software Version\" | fields Switch \"Software Version\" | append [| mstats latest(\"cisco.content.device-system-data.boot-time_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as \"Boot Time\" | fields Switch \"Boot Time\"] | append [| mstats latest(\"cisco.content.device-system-data.last-reboot-reason_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id value | rename cisco.node_id as Switch value as \"Reboot Reason\" | fields Switch \"Reboot Reason\"] | append [| mstats latest(\"cisco.content.device-inventory.part-number_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" hw-type=\"hw-type-chassis\" BY cisco.node_id value | rename cisco.node_id as Switch value as PID | fields Switch PID] | append [| mstats latest(\"cisco.content.device-inventory.serial-number_info\") as m WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" hw-type=\"hw-type-chassis\" BY cisco.node_id value | rename cisco.node_id as Switch value as \"Serial Number\" | fields Switch \"Serial Number\"] | stats values(\"Software Version\") as \"Software Version\" values(\"Boot Time\") as \"Boot Time\" values(\"Reboot Reason\") as \"Reboot Reason\" values(PID) as PID values(\"Serial Number\") as \"Serial Number\" BY Switch | sort Switch",
+        "queryParameters": {
+          "earliest": "-30m@m",
+          "latest": "$global_time.latest$"
+        }
+      }
+    },
+    "ds_cpu_gauge": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.five-seconds\") as cpu_5sec WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" span=5m | tail 1",
+        "queryParameters": {
+          "earliest": "-30m@m",
+          "latest": "$global_time.latest$"
+        }
+      }
+    },
+    "ds_mem_gauge": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.used-memory\") as used latest(\"cisco.content.total-memory\") as total WHERE index=cisco_mdt cisco.encoding_path=\"Cisco-IOS-XE-memory-oper:memory-statistics/memory-statistic\" cisco.node_id=\"$switch_node$\" BY name | where name=\"Processor\" | eval pct=round(used/total*100, 1) | fields pct",
+        "queryParameters": {
+          "earliest": "-30m@m",
+          "latest": "$global_time.latest$"
+        }
+      }
+    },
+    "ds_poe_gauge": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.consumed-poe-power\") as consumed latest(\"cisco.content.power-budget\") as budget WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id | eval pct=if(budget>0, round(consumed/budget*100, 1), 0) | stats avg(pct) as pct",
+        "queryParameters": {
+          "earliest": "-30m@m",
+          "latest": "$global_time.latest$"
+        }
+      }
+    },
+    "ds_cpu_trend": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats avg(\"cisco.content.five-seconds\") as \"5 Sec\" avg(\"cisco.content.one-minute\") as \"1 Min\" avg(\"cisco.content.five-minutes\") as \"5 Min\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id span=5m",
+        "queryParameters": {
+          "earliest": "$global_time.earliest$",
+          "latest": "$global_time.latest$"
+        }
+      }
+    },
+    "ds_intf_throughput": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats avg(\"cisco.content.statistics.in-octets\") as in_octets avg(\"cisco.content.statistics.out-octets\") as out_octets WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY name span=5m | where NOT match(name, \"Null0|Loopback\") | eventstats sum(in_octets) as total_in BY name | sort -total_in | head 200 | chart limit=10 avg(in_octets) as \"In Octets\" avg(out_octets) as \"Out Octets\" BY _time name",
+        "queryParameters": {
+          "earliest": "$global_time.earliest$",
+          "latest": "$global_time.latest$"
+        }
+      }
+    },
+    "ds_env_temp": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.environment-sensor.current-reading\") as Reading latest(\"cisco.content.environment-sensor.state_info\") as state_flag WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY name location cisco.node_id value | eval State=coalesce(value, \"-\") | rename cisco.node_id as Switch name as Sensor location as Location | where NOT match(Sensor, \"^$\") | table Switch Location Sensor Reading State | sort Switch Location Sensor",
+        "queryParameters": {
+          "earliest": "-30m@m",
+          "latest": "$global_time.latest$"
+        }
+      }
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": {
+          "queryParameters": {
+            "earliest": "-4h@m",
+            "latest": "now"
+          }
+        }
+      }
+    }
+  },
+  "inputs": {
+    "input_switch": {
+      "type": "input.dropdown",
+      "options": {
+        "items": [
+          { "label": "All Switches", "value": "*" }
+        ],
+        "defaultValue": "*",
+        "token": "switch_node"
+      },
+      "title": "Switch",
+      "dataSources": {
+        "primary": "ds_switch_list"
+      }
+    },
+    "input_time": {
+      "type": "input.timerange",
+      "options": {
+        "token": "global_time",
+        "defaultValue": "-4h@m,now"
+      },
+      "title": "Time Range"
+    }
+  },
+  "layout": {
+    "type": "grid",
+    "options": { "width": 1440, "height": 1600 },
+    "structure": [
+      { "item": "viz_device_overview", "type": "block", "position": { "x": 0, "y": 0, "w": 1440, "h": 200 } },
+      { "item": "viz_cpu_gauge", "type": "block", "position": { "x": 0, "y": 210, "w": 480, "h": 200 } },
+      { "item": "viz_mem_gauge", "type": "block", "position": { "x": 480, "y": 210, "w": 480, "h": 200 } },
+      { "item": "viz_poe_gauge", "type": "block", "position": { "x": 960, "y": 210, "w": 480, "h": 200 } },
+      { "item": "viz_cpu_trend", "type": "block", "position": { "x": 0, "y": 420, "w": 720, "h": 300 } },
+      { "item": "viz_intf_throughput", "type": "block", "position": { "x": 720, "y": 420, "w": 720, "h": 300 } },
+      { "item": "viz_env_temp", "type": "block", "position": { "x": 0, "y": 730, "w": 1440, "h": 350 } },
+      { "item": "viz_nav_links", "type": "block", "position": { "x": 0, "y": 1090, "w": 1440, "h": 250 } }
+    ],
+    "globalInputs": ["input_switch", "input_time"]
+  },
+  "title": "Cisco IOS XE — MDT Overview",
+  "description": "Model-Driven Telemetry via OTEL Collector — System Health at a Glance"
+}
