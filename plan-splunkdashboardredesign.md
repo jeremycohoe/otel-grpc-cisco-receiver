@@ -1,7 +1,11 @@
 # Plan: Splunk Dashboard Studio Redesign
 
+## Status: Phase 1-8 COMPLETE — Iterating on query fixes
+
+All 7 dashboards created, imported into Splunk, import script working, README updated. Currently iterating on SPL query accuracy based on live testing.
+
 ## TL;DR
-Complete redesign of the Cisco MDT telemetry dashboard from Classic XML (30 panels in one file) to a multi-dashboard Splunk Dashboard Framework (JSON) suite covering all 35 active telemetry subscriptions. Organized as a main overview dashboard with navigation links to 6 category-specific dashboards.
+Complete redesign of the Cisco MDT telemetry dashboard from Classic XML (30 panels in one file) to a multi-dashboard Splunk Dashboard Framework (JSON) suite covering all active telemetry subscriptions. Organized as a main overview dashboard with navigation links to 6 category-specific dashboards.
 
 ## Architecture — 7 Dashboards
 
@@ -127,3 +131,66 @@ Create `cisco_mdt_telemetry.json`:
 1. **Cross-dashboard tokens** — Dashboard Framework supports URL param passing for `switch_node` and `time_range` when navigating between dashboards.
 2. **Metric naming dependency** — The `cisco.content.` prefix and `_info` suffix depend on the receiver's YANG parser output. If naming convention changes, all SPL queries need updating.
 3. **OSPF panel** — Sub 1025 only has 2 data points (op-mode). Routing dashboard OSPF section will be minimal — just a state indicator. Could be omitted if it adds clutter, or kept as a placeholder for environments with active OSPF.
+
+## Completed Work Log
+
+### Phase 1-7: Dashboard JSON Files — DONE
+All 7 dashboard JSON files created in `splunk-dashboards/`:
+- `cisco_mdt_overview.json` — 8 visualizations, 9 data sources
+- `cisco_mdt_infrastructure.json` — 18 visualizations, 18+ data sources
+- `cisco_mdt_network.json` — 15 visualizations, 16+ data sources
+- `cisco_mdt_routing.json` — 13 visualizations, 14+ data sources
+- `cisco_mdt_power.json` — 11 visualizations (updated with real fan RPM, PSU capacity, env overview)
+- `cisco_mdt_security.json` — 10 visualizations, 12+ data sources
+- `cisco_mdt_telemetry.json` — 7 visualizations (updated with working queries)
+
+### Phase 8: Import Script & Docs — DONE
+- `scripts/import-dashboards.sh` — Python-based import (handles CDATA/XML escaping correctly)
+- `start-splunk.sh` — auto-imports dashboards after index creation
+- `README.md` — updated with 7-dashboard table, new import instructions, project structure
+- `cisco_mdt_overview.xml` backed up as `.xml.bak`
+- Git committed (not yet pushed to GitHub)
+
+### Post-Phase Bug Fixes Applied
+These fixes were applied during live testing with actual switch data:
+
+1. **Telemetry Health — Subscription Health table**: Changed from `count("cisco.content.five-seconds")` (only showed Sub 1001) to `mcatalog values(metric_name) ... BY cisco.subscription_id` — now shows all 79 subscriptions.
+
+2. **Telemetry Health — Data Volume chart**: Changed from `mstats count("cisco.content.*")` (hit Splunk wildcard expansion limit) to `mstats latest(_value) WHERE metric_name="cisco.content.*"` then `stats count BY subscription_id` — now renders correctly.
+
+3. **Telemetry Health — Data Points by Path table**: Same `mcatalog` fix, table row limit increased from 50 to 100.
+
+4. **Power — Fan Speed (RPM)**: Changed from `environment-sensor.current-reading` (returned 0 for fans) to `cisco.content.value.string_info` with `cname="Fan*"` filtering numeric values > 100 — now shows actual RPM (5440/12960).
+
+5. **Power — PSU Type & Capacity**: Changed from `environment-sensor.current-reading` (returned 0 for PSU) to `cisco.content.value.string_info` with `cname="PowerSupply*"` filtering AC/DC type and integer values >= 100 — now shows AC, 350W/1100W.
+
+6. **Power — Fan/PSU Sensor State**: Changed from `cisco.content.state.empty/removable` (no data) to `cisco.content.environment-sensor.state_info` — now shows Norm/NotExist per sensor.
+
+7. **Power — Environment Sensor Overview (new panel)**: Added combined table showing all environment sensors (temp, fan, PSU) with latest reading, units, and state in one view.
+
+8. **Import Script**: Rewrote from bash curl to Python urllib — bash CDATA `<![CDATA[` was conflicting with bash `!` history expansion. Now handles XML escaping, `&` in titles, and create-vs-update logic correctly.
+
+## Known Issues & Future Work
+- **Key-value correlation gap**: Fan RPM, PSU watts, and other platform-property values are stored as generic `cisco.content.value.string_info` with `cname` identifying the component but `name` (speed, input-voltage, capacity, etc.) stored as a **separate key metric** (`cisco.keys.name_info`). Without key propagation in the receiver, we can't label which value is RPM vs watts vs voltage in the same query. Current workaround: filter by cname pattern + value range heuristics.
+- **Other dashboards not yet tested live**: Infrastructure, Network, Routing, and Security dashboards have not been tested against live Splunk data yet. Queries were adapted from proven XML dashboard queries but may need similar fixes when tested.
+- **Dashboard Studio rendering**: Some panels may need layout/size adjustments once viewed in the actual Dashboard Studio UI. Grid positioning was set programmatically.
+- **PoE Port Detail query**: Uses multi-append pattern to correlate intf-name with oper-power. May need refinement if there are many ports with power data.
+- **Navigation links**: Overview dashboard nav links use `/app/search/cisco_mdt_*` URL pattern — verify these work in the Splunk app context.
+
+## Import Commands
+```bash
+# Import all dashboards
+./scripts/import-dashboards.sh
+
+# Import with custom Splunk URL/credentials
+./scripts/import-dashboards.sh https://localhost:8089 admin Cisco123
+
+# View dashboards
+# http://<host>:8000/app/search/cisco_mdt_overview
+# http://<host>:8000/app/search/cisco_mdt_infrastructure
+# http://<host>:8000/app/search/cisco_mdt_network
+# http://<host>:8000/app/search/cisco_mdt_routing
+# http://<host>:8000/app/search/cisco_mdt_power
+# http://<host>:8000/app/search/cisco_mdt_security
+# http://<host>:8000/app/search/cisco_mdt_telemetry
+```

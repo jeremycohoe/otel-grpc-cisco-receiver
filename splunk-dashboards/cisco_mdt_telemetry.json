@@ -10,7 +10,7 @@
       "type": "splunk.table",
       "title": "MDT Subscription Health",
       "dataSources": { "primary": "ds_sub_health" },
-      "options": { "count": 50 }
+      "options": { "count": 100 }
     },
     "viz_data_volume": {
       "type": "splunk.area",
@@ -41,7 +41,7 @@
       "type": "splunk.table",
       "title": "Data Points by Subscription & Encoding Path",
       "dataSources": { "primary": "ds_sub_by_path" },
-      "options": { "count": 50 }
+      "options": { "count": 100 }
     },
     "viz_punt_inject": {
       "type": "splunk.table",
@@ -68,14 +68,14 @@
     "ds_sub_health": {
       "type": "ds.search",
       "options": {
-        "query": "| mstats count(\"cisco.content.five-seconds\") as dp WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.subscription_id cisco.encoding_path cisco.node_id | rename cisco.subscription_id as \"Sub ID\" cisco.encoding_path as \"Encoding Path\" cisco.node_id as Switch | sort Switch \"Sub ID\" | table Switch \"Sub ID\" \"Encoding Path\" dp | rename dp as \"Data Points\"",
+        "query": "| mcatalog values(metric_name) as metrics WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.subscription_id cisco.encoding_path cisco.node_id | eval metric_count=mvcount(metrics) | rename cisco.subscription_id as \"Sub ID\" cisco.encoding_path as \"Encoding Path\" cisco.node_id as Switch metric_count as \"Metric Count\" | sort Switch \"Sub ID\" | table Switch \"Sub ID\" \"Encoding Path\" \"Metric Count\"",
         "queryParameters": { "earliest": "$global_time.earliest$", "latest": "$global_time.latest$" }
       }
     },
     "ds_data_volume": {
       "type": "ds.search",
       "options": {
-        "query": "| mstats count(\"cisco.content.five-seconds\") as c WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.encoding_path span=5m | chart limit=15 sum(c) BY _time cisco.encoding_path",
+        "query": "| mstats latest(_value) as v WHERE index=cisco_mdt metric_name=\"cisco.content.*\" cisco.node_id=\"$switch_node$\" BY cisco.subscription_id span=5m | stats count as dp BY cisco.subscription_id _time | chart limit=50 sum(dp) BY _time cisco.subscription_id",
         "queryParameters": { "earliest": "$global_time.earliest$", "latest": "$global_time.latest$" }
       }
     },
@@ -96,7 +96,7 @@
     "ds_sub_by_path": {
       "type": "ds.search",
       "options": {
-        "query": "| mstats count(\"cisco.content.five-seconds\") as dp WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.subscription_id cisco.encoding_path cisco.node_id | rename cisco.subscription_id as \"Sub ID\" cisco.encoding_path as \"YANG Path\" cisco.node_id as Switch dp as \"Data Points\" | sort Switch \"Sub ID\"",
+        "query": "| mcatalog values(metric_name) as metrics WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.subscription_id cisco.encoding_path cisco.node_id | eval metric_count=mvcount(metrics) | mvexpand metrics | stats count as \"Data Points\" first(cisco.encoding_path) as \"YANG Path\" first(cisco.node_id) as Switch BY cisco.subscription_id | rename cisco.subscription_id as \"Sub ID\" | sort Switch \"Sub ID\"",
         "queryParameters": { "earliest": "-1h@m", "latest": "$global_time.latest$" }
       }
     },

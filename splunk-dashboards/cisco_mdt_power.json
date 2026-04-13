@@ -58,27 +58,33 @@
     },
     "viz_psu_table": {
       "type": "splunk.table",
-      "title": "Power Supply Readings",
+      "title": "Power Supply Type and Capacity",
       "dataSources": { "primary": "ds_psu_table" },
       "options": { "count": 10 }
     },
     "viz_psu_platform": {
       "type": "splunk.table",
-      "title": "Power Supply Detail (Platform)",
+      "title": "Power Supply Sensor State",
       "dataSources": { "primary": "ds_psu_platform" },
       "options": { "count": 10 }
     },
     "viz_fan_table": {
       "type": "splunk.table",
-      "title": "Fan Status (RPM)",
+      "title": "Fan Speed (RPM)",
       "dataSources": { "primary": "ds_fan_table" },
       "options": { "count": 10 }
     },
     "viz_fan_platform": {
       "type": "splunk.table",
-      "title": "Fan Detail (Platform)",
+      "title": "Fan Sensor State",
       "dataSources": { "primary": "ds_fan_platform" },
       "options": { "count": 10 }
+    },
+    "viz_env_overview": {
+      "type": "splunk.table",
+      "title": "Environment Sensor Overview",
+      "dataSources": { "primary": "ds_env_overview" },
+      "options": { "count": 20 }
     }
   },
   "dataSources": {
@@ -134,28 +140,35 @@
     "ds_psu_table": {
       "type": "ds.search",
       "options": {
-        "query": "| mstats latest(\"cisco.content.environment-sensor.current-reading\") as \"Reading (W)\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY name location cisco.node_id | where match(name, \"(?i)power supply\") | rename name as \"Power Supply\" location as Location cisco.node_id as Switch | table Switch \"Power Supply\" Location \"Reading (W)\" | sort Switch",
+        "query": "| mstats latest(\"cisco.content.value.string_info\") as v WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" cname=\"PowerSupply*\" BY cisco.node_id cname value | where value=\"AC\" OR value=\"DC\" OR (match(value, \"^[0-9]+$\") AND tonumber(value)>=100) | stats values(eval(if(value=\"AC\" OR value=\"DC\", value, null()))) as Type values(eval(if(match(value, \"^[0-9]+$\") AND tonumber(value)>=100, value, null()))) as \"Capacity (W)\" BY cisco.node_id cname | rename cisco.node_id as Switch cname as \"Power Supply\" | table Switch \"Power Supply\" Type \"Capacity (W)\" | sort Switch \"Power Supply\"",
         "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
       }
     },
     "ds_psu_platform": {
       "type": "ds.search",
       "options": {
-        "query": "| mstats latest(\"cisco.content.state.empty\") as empty latest(\"cisco.content.state.removable\") as removable latest(\"cisco.content.state.alloc-pwr\") as \"Alloc Power\" latest(\"cisco.content.state.used-pwr\") as \"Used Power\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id cname | where match(cname, \"^PowerSupply[0-9]\") | eval Inserted=if(empty==0, \"Yes\", \"No\") | rename cisco.node_id as Switch cname as Slot | table Switch Slot Inserted \"Alloc Power\" \"Used Power\" | sort Switch Slot",
+        "query": "| mstats latest(\"cisco.content.environment-sensor.state_info\") as v WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id name value location | where match(name, \"(?i)power supply\") | rename cisco.node_id as Switch name as \"Power Supply\" value as State location as Location | table Switch Location \"Power Supply\" State | sort Switch \"Power Supply\"",
         "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
       }
     },
     "ds_fan_table": {
       "type": "ds.search",
       "options": {
-        "query": "| mstats latest(\"cisco.content.environment-sensor.current-reading\") as \"Reading (RPM)\" WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY name location cisco.node_id | where match(name, \"(?i)fan\") | rename name as Fan location as Location cisco.node_id as Switch | table Switch Fan Location \"Reading (RPM)\" | sort Switch Fan",
+        "query": "| mstats latest(\"cisco.content.value.string_info\") as v WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" cname=\"Fan*\" BY cisco.node_id cname value | where isnum(tonumber(value)) AND tonumber(value) > 100 | dedup cisco.node_id cname | rename cisco.node_id as Switch cname as Fan value as \"Speed (RPM)\" | table Switch Fan \"Speed (RPM)\" | sort Switch Fan",
         "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
       }
     },
     "ds_fan_platform": {
       "type": "ds.search",
       "options": {
-        "query": "| mstats latest(\"cisco.content.state.empty\") as empty latest(\"cisco.content.state.removable\") as removable WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id cname | where match(cname, \"(?i)fan\") | eval Inserted=if(empty==0, \"Yes\", \"No\") | rename cisco.node_id as Switch cname as \"Fan Tray\" | table Switch \"Fan Tray\" Inserted removable | sort Switch \"Fan Tray\"",
+        "query": "| mstats latest(\"cisco.content.environment-sensor.state_info\") as v WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id name value location | where match(name, \"(?i)fan\") | rename cisco.node_id as Switch name as Sensor value as State location as Location | table Switch Location Sensor State | sort Switch Sensor",
+        "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
+      }
+    },
+    "ds_env_overview": {
+      "type": "ds.search",
+      "options": {
+        "query": "| mstats latest(\"cisco.content.environment-sensor.current-reading\") as Reading latest(\"cisco.content.environment-sensor.state_info\") as si WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id name location | append [| mstats latest(\"cisco.content.environment-sensor.state_info\") as si WHERE index=cisco_mdt cisco.node_id=\"$switch_node$\" BY cisco.node_id name value location | rename value as State | fields cisco.node_id name location State] | stats latest(Reading) as Reading values(State) as State BY cisco.node_id name location | eval Type=case(match(name, \"(?i)temp\"), \"Temperature\", match(name, \"(?i)fan\"), \"Fan\", match(name, \"(?i)power\"), \"Power Supply\", 1=1, \"Other\"), Units=case(match(name, \"(?i)temp\"), \"°C\", match(name, \"(?i)fan\"), \"RPM\", 1=1, \"-\") | rename cisco.node_id as Switch name as Sensor location as Location | table Switch Location Type Sensor Reading Units State | sort Switch Type Sensor",
         "queryParameters": { "earliest": "-30m@m", "latest": "$global_time.latest$" }
       }
     }
@@ -182,21 +195,22 @@
   },
   "layout": {
     "type": "grid",
-    "options": { "width": 1440, "height": 3200 },
+    "options": { "width": 1440, "height": 2250 },
     "structure": [
       { "item": "viz_poe_budget_gauge", "type": "block", "position": { "x": 0, "y": 0, "w": 480, "h": 250 } },
       { "item": "viz_poe_summary", "type": "block", "position": { "x": 480, "y": 0, "w": 960, "h": 250 } },
-      { "item": "viz_psu_budget", "type": "block", "position": { "x": 0, "y": 260, "w": 1440, "h": 250 } },
-      { "item": "viz_poe_module", "type": "block", "position": { "x": 0, "y": 520, "w": 1440, "h": 200 } },
-      { "item": "viz_poe_ports", "type": "block", "position": { "x": 0, "y": 730, "w": 1440, "h": 400 } },
-      { "item": "viz_temp_chart", "type": "block", "position": { "x": 0, "y": 1140, "w": 1440, "h": 300 } },
-      { "item": "viz_psu_table", "type": "block", "position": { "x": 0, "y": 1450, "w": 720, "h": 250 } },
-      { "item": "viz_psu_platform", "type": "block", "position": { "x": 720, "y": 1450, "w": 720, "h": 250 } },
-      { "item": "viz_fan_table", "type": "block", "position": { "x": 0, "y": 1710, "w": 720, "h": 250 } },
-      { "item": "viz_fan_platform", "type": "block", "position": { "x": 720, "y": 1710, "w": 720, "h": 250 } }
+      { "item": "viz_psu_budget", "type": "block", "position": { "x": 0, "y": 260, "w": 1440, "h": 200 } },
+      { "item": "viz_poe_module", "type": "block", "position": { "x": 0, "y": 470, "w": 1440, "h": 200 } },
+      { "item": "viz_poe_ports", "type": "block", "position": { "x": 0, "y": 680, "w": 1440, "h": 300 } },
+      { "item": "viz_temp_chart", "type": "block", "position": { "x": 0, "y": 990, "w": 1440, "h": 300 } },
+      { "item": "viz_env_overview", "type": "block", "position": { "x": 0, "y": 1300, "w": 1440, "h": 300 } },
+      { "item": "viz_fan_table", "type": "block", "position": { "x": 0, "y": 1610, "w": 480, "h": 250 } },
+      { "item": "viz_fan_platform", "type": "block", "position": { "x": 480, "y": 1610, "w": 480, "h": 250 } },
+      { "item": "viz_psu_table", "type": "block", "position": { "x": 960, "y": 1610, "w": 480, "h": 250 } },
+      { "item": "viz_psu_platform", "type": "block", "position": { "x": 0, "y": 1870, "w": 480, "h": 200 } }
     ],
     "globalInputs": ["input_switch", "input_time"]
   },
-  "title": "Cisco IOS XE — Power & PoE",
+  "title": "Cisco IOS XE — Power and PoE",
   "description": "PoE Budget, Module Details, Port Power, PSU, Temperature, Fans"
 }

@@ -2,14 +2,11 @@
 # Import all Cisco MDT Dashboard Studio dashboards into Splunk
 # Usage: ./scripts/import-dashboards.sh [SPLUNK_URL] [USERNAME] [PASSWORD]
 
-set -e
-
 SPLUNK_URL="${1:-https://localhost:8089}"
 USERNAME="${2:-admin}"
 PASSWORD="${3:-Cisco123}"
 DASHBOARD_DIR="$(cd "$(dirname "$0")/../splunk-dashboards" && pwd)"
 
-# Dashboard files and their Splunk view names
 DASHBOARDS=(
   "cisco_mdt_overview"
   "cisco_mdt_infrastructure"
@@ -25,63 +22,81 @@ echo "  Splunk API: $SPLUNK_URL"
 echo "  Dashboard dir: $DASHBOARD_DIR"
 echo ""
 
-imported=0
-failed=0
+# Use Python to avoid bash escaping issues with CDATA/XML
+python3 - "$SPLUNK_URL" "$USERNAME" "$PASSWORD" "$DASHBOARD_DIR" "${DASHBOARDS[@]}" <<'PYEOF'
+import sys, json, urllib.request, urllib.parse, ssl, base64, os
 
-for name in "${DASHBOARDS[@]}"; do
-  json_file="${DASHBOARD_DIR}/${name}.json"
+ctx = ssl.create_default_context()
+ctx.check_hostname = False
+ctx.verify_mode = ssl.CERT_NONE
 
-  if [[ ! -f "$json_file" ]]; then
-    echo "SKIP: $json_file not found"
-    ((failed++))
-    continue
-  fi
+splunk_url = sys.argv[1]
+username = sys.argv[2]
+password = sys.argv[3]
+dashboard_dir = sys.argv[4]
+dashboards = sys.argv[5:]
 
-  # Read JSON content and wrap in Dashboard Studio XML envelope
-  json_content=$(cat "$json_file")
-  xml_payload="<dashboard version=\"2\" theme=\"dark\"><label>$(echo "$json_content" | python3 -c "import sys,json; print(json.load(sys.stdin).get('title','Untitled'))")</label><description>$(echo "$json_content" | python3 -c "import sys,json; print(json.load(sys.stdin).get('description',''))")</description></dashboard>"
+auth = "Basic " + base64.b64encode(f"{username}:{password}".encode()).decode()
+imported = 0
+failed = 0
 
-  # Create or update the dashboard view
-  http_code=$(curl -sk -o /dev/null -w "%{http_code}" \
-    -u "${USERNAME}:${PASSWORD}" \
-    "${SPLUNK_URL}/servicesNS/admin/search/data/ui/views/${name}" \
-    -X POST \
-    -d "eai:data=${xml_payload}" \
-    -d "eai:type=views" 2>/dev/null)
+for name in dashboards:
+    json_file = os.path.join(dashboard_dir, f"{name}.json")
+    if not os.path.isfile(json_file):
+        print(f"  SKIP: {json_file} not found")
+        failed += 1
+        continue
 
-  if [[ "$http_code" == "200" || "$http_code" == "201" || "$http_code" == "409" ]]; then
-    # Upload the JSON payload as Dashboard Studio content
-    http_code=$(curl -sk -o /dev/null -w "%{http_code}" \
-      -u "${USERNAME}:${PASSWORD}" \
-      "${SPLUNK_URL}/servicesNS/admin/search/data/ui/views/${name}" \
-      -X POST \
-      --data-urlencode "eai:data=${xml_payload}" 2>/dev/null)
-  fi
+    with open(json_file) as f:
+        data = json.load(f)
 
-  # Now set the Dashboard Studio JSON payload via the dashboards endpoint
-  http_code_ds=$(curl -sk -o /dev/null -w "%{http_code}" \
-    -u "${USERNAME}:${PASSWORD}" \
-    "${SPLUNK_URL}/servicesNS/admin/search/data/ui/views/${name}" \
-    -X POST \
-    -d "eai:type=views" \
-    --data-urlencode "eai:data@${json_file}" 2>/dev/null)
+    title = data.get("title", "Untitled").replace("&", "&amp;")
+    desc = data.get("description", "").replace("&", "&amp;")
+    json_str = json.dumps(data)
 
-  if [[ "$http_code_ds" == "200" || "$http_code_ds" == "201" ]]; then
-    echo "  OK: ${name}"
-    ((imported++))
-  else
-    echo "  FAIL (HTTP ${http_code_ds}): ${name}"
-    ((failed++))
-  fi
-done
+    xml = (
+        f'<dashboard version="2" theme="dark">\n'
+        f'  <label>{title}</label>\n'
+        f'  <description>{desc}</description>\n'
+        f'  <definition><![CDATA[{json_str}]]></definition>\n'
+        f'</dashboard>'
+    )
 
-echo ""
-echo "Done: ${imported} imported, ${failed} failed"
-echo ""
-if [[ $imported -gt 0 ]]; then
-  host=$(echo "$SPLUNK_URL" | sed 's|https*://||;s|:.*||')
-  echo "Dashboards available at:"
-  for name in "${DASHBOARDS[@]}"; do
-    echo "  http://${host}:8000/app/search/${name}"
-  done
-fi
+    # Try update first (POST to specific view)
+    params = urllib.parse.urlencode({"eai:data": xml}).encode()
+    url = f"{splunk_url}/servicesNS/admin/search/data/ui/views/{name}"
+    req = urllib.request.Request(url, data=params, method="POST")
+    req.add_header("Authorization", auth)
+
+    try:
+        resp = urllib.request.urlopen(req, context=ctx)
+        print(f"  OK: {name} (updated)")
+        imported += 1
+        continue
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            print(f"  FAIL (HTTP {e.code}): {name}")
+            failed += 1
+            continue
+
+    # 404 = doesn't exist yet, create it
+    params = urllib.parse.urlencode({"name": name, "eai:data": xml}).encode()
+    url = f"{splunk_url}/servicesNS/admin/search/data/ui/views"
+    req = urllib.request.Request(url, data=params, method="POST")
+    req.add_header("Authorization", auth)
+
+    try:
+        resp = urllib.request.urlopen(req, context=ctx)
+        print(f"  OK: {name} (created)")
+        imported += 1
+    except urllib.error.HTTPError as e:
+        print(f"  FAIL (HTTP {e.code}): {name}")
+        failed += 1
+
+print(f"\nDone: {imported} imported, {failed} failed\n")
+if imported > 0:
+    host = splunk_url.replace("https://", "").replace("http://", "").split(":")[0]
+    print("Dashboards available at:")
+    for name in dashboards:
+        print(f"  http://{host}:8000/app/search/{name}")
+PYEOF
