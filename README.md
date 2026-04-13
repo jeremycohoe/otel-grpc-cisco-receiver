@@ -155,6 +155,23 @@ curl -sk -u admin:Cisco123 \
   -d output_mode=json -d exec_mode=oneshot
 ```
 
+### 6. Validate Telemetry Data (Optional)
+
+Capture per-subscription telemetry to files for inspection before sending to a backend:
+
+```bash
+# Run collector in capture mode (writes per-subscription JSONL files)
+./build/cisco-otelcol --config capture-config.yaml
+
+# Parse into human-readable formats (data.txt, flat.jsonl, pretty JSON, markdown)
+python3 parse-capture.py --rename --collect
+
+# Review a subscription
+cat telemetry-capture/_all-data-txt/1005-environment-sensors.txt
+```
+
+See [docs/TELEMETRY-CAPTURE.md](docs/TELEMETRY-CAPTURE.md) for the full capture & validation workflow.
+
 ## Docker Compose
 
 A full stack is also available via Docker Compose:
@@ -209,9 +226,16 @@ When `tls` is omitted the server runs plaintext — useful for lab environments.
 │   ├── rfc_yang_parser.go             # RFC 6020/7950 parser
 │   └── metadata.yaml                  # OTel component metadata
 ├── proto/                             # Cisco .proto files + generated Go
+├── docs/                              # Additional documentation
+│   ├── CONFIG.md                      # Full configuration reference
+│   ├── SECURITY.md                    # TLS / mTLS setup guide
+│   └── TELEMETRY-CAPTURE.md           # Capture & validation workflow ←
 ├── splunk-dashboards/                 # Pre-built Splunk dashboard XML
 │   └── cisco_mdt_overview.xml         # 30-panel dashboard with multi-switch support
-├── c9300x-mdt-subscriptions.cfg       # 21 IOS XE telemetry subscriptions
+├── capture-config.yaml                # Per-subscription capture config (file exporter)
+├── parse-capture.py                   # Parse captured telemetry into readable formats
+├── configure-mdt.py                   # Push MDT subscriptions to switches via SSH
+├── c9300x-mdt-subscriptions.cfg       # 49 IOS XE telemetry subscriptions
 ├── start-splunk.sh                    # One-command Splunk Enterprise setup
 ├── start-otel.sh                      # Start the collector
 ├── docker-compose.yaml                # Full Splunk HEC stack

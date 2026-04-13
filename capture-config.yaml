@@ -1,0 +1,55 @@
+# Telemetry Capture Configuration
+# Writes per-subscription JSON files for data validation & dashboard design
+# Usage: ./build/cisco-otelcol --config capture-config.yaml
+#
+# Output: ./telemetry-capture/<subscription_id>/metrics.jsonl
+# Example: ./telemetry-capture/1001/metrics.jsonl  (CPU utilization)
+#          ./telemetry-capture/1007/metrics.jsonl  (interfaces)
+
+receivers:
+  cisco_telemetry:
+    listen_address: "0.0.0.0:57500"
+    max_recv_msg_size_mib: 4
+    max_concurrent_streams: 128
+    keepalive:
+      time: 30s
+      timeout: 10s
+    yang:
+      enable_rfc_parser: true
+      cache_modules: true
+      max_modules: 1000
+
+processors:
+  batch:
+    timeout: 2s
+    send_batch_size: 1024
+
+exporters:
+  debug:
+    verbosity: detailed
+
+  file/capture:
+    path: ./telemetry-capture/*/metrics.jsonl
+    format: json
+    group_by:
+      enabled: true
+      resource_attribute: cisco.subscription_id
+      max_open_files: 100
+
+service:
+  pipelines:
+    metrics:
+      receivers: [cisco_telemetry]
+      processors: [batch]
+      exporters: [file/capture, debug]
+
+  telemetry:
+    logs:
+      level: debug
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: "0.0.0.0"
+                port: 8889

@@ -9,6 +9,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COLLECTOR="$SCRIPT_DIR/build/cisco-otelcol"
 CONFIG="$SCRIPT_DIR/collector-config.yaml"
 
+# Kill any stale collector process to free ports (8888, 57500)
+if pkill -f cisco-otelcol 2>/dev/null; then
+  echo "Stopped previous collector instance"
+  sleep 1
+fi
+
 if [[ ! -x "$COLLECTOR" ]]; then
   echo "ERROR: Collector binary not found at $COLLECTOR"
   echo "Run: builder --config=builder-config.yaml"

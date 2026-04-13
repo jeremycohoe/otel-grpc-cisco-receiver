@@ -56,3 +56,6 @@ Thumbs.db
 
 # Test artifacts
 testdata/output/
+
+# Telemetry capture output (generated data, not source)
+telemetry-capture/
