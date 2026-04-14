@@ -378,28 +378,43 @@ func (p *YANGParser) LoadBuiltinModules() {
 
 	// ── Cisco-IOS-XE-poe-oper (bonus: present in live data) ────────────────
 	// list /poe-oper-data/poe-port { key "intf-name"; }
-	// list /poe-oper-data/poe-module { key "module-num"; }
+	// list /poe-oper-data/poe-port-detail { key "intf-name"; }
+	// list /poe-oper-data/poe-module { key "module"; }
+	// list /poe-oper-data/poe-stack { key "power-stack-name"; }
+	// list /poe-oper-data/poe-switch { key "switch-num"; }
 	p.modules["Cisco-IOS-XE-poe-oper"] = &YANGModule{
 		Name:      "Cisco-IOS-XE-poe-oper",
 		Namespace: "http://cisco.com/ns/yang/Cisco-IOS-XE-poe-oper",
 		Prefix:    "poe-ios-xe-oper",
 		KeyedLeafs: map[string]string{
-			"/poe-oper-data/poe-port":   "intf-name",
-			"/poe-oper-data/poe-module": "module-num",
+			"/poe-oper-data/poe-port":        "intf-name",
+			"/poe-oper-data/poe-port-detail": "intf-name",
+			"/poe-oper-data/poe-module":      "module",
+			"/poe-oper-data/poe-stack":       "power-stack-name",
+			"/poe-oper-data/poe-switch":      "switch-num",
 		},
 		ListKeys: map[string][]string{
-			"/poe-oper-data/poe-port":   {"intf-name"},
-			"/poe-oper-data/poe-module": {"module-num"},
+			"/poe-oper-data/poe-port":        {"intf-name"},
+			"/poe-oper-data/poe-port-detail": {"intf-name"},
+			"/poe-oper-data/poe-module":      {"module"},
+			"/poe-oper-data/poe-stack":       {"power-stack-name"},
+			"/poe-oper-data/poe-switch":      {"switch-num"},
 		},
 		DataTypes: map[string]*YANGDataType{
-			"/poe-oper-data/poe-port/intf-name":         {Type: "string", Description: "Interface name key"},
-			"/poe-oper-data/poe-port/poe-intf-enabled":  {Type: "boolean", Description: "PoE enabled on interface"},
-			"/poe-oper-data/poe-port/power-used":        {Type: "decimal64", Units: "watts", Description: "Power consumed"},
-			"/poe-oper-data/poe-port/pd-class":          {Type: "enumeration", Description: "PD class"},
-			"/poe-oper-data/poe-module/module-num":      {Type: "uint32", Description: "Module number key"},
-			"/poe-oper-data/poe-module/available-power": {Type: "decimal64", Units: "watts", Description: "Available power"},
-			"/poe-oper-data/poe-module/used-power":      {Type: "decimal64", Units: "watts", Description: "Used power"},
-			"/poe-oper-data/poe-module/remaining-power": {Type: "decimal64", Units: "watts", Description: "Remaining power"},
+			"/poe-oper-data/poe-port/intf-name":                {Type: "string", Description: "Interface name key"},
+			"/poe-oper-data/poe-port/poe-intf-enabled":         {Type: "boolean", Description: "PoE enabled on interface"},
+			"/poe-oper-data/poe-port/power-used":               {Type: "decimal64", Units: "watts", Description: "Power consumed"},
+			"/poe-oper-data/poe-port/pd-class":                 {Type: "enumeration", Description: "PD class"},
+			"/poe-oper-data/poe-port-detail/intf-name":         {Type: "string", Description: "Interface name key"},
+			"/poe-oper-data/poe-port-detail/oper-power":        {Type: "decimal64", Units: "milliwatts", Description: "Operational power"},
+			"/poe-oper-data/poe-port-detail/power-used":        {Type: "decimal64", Units: "milliwatts", Description: "Power consumed"},
+			"/poe-oper-data/poe-port-detail/oper-state":        {Type: "enumeration", Description: "PoE operational state"},
+			"/poe-oper-data/poe-module/module":                 {Type: "uint32", Description: "Module number key"},
+			"/poe-oper-data/poe-module/available-power":        {Type: "decimal64", Units: "watts", Description: "Available power"},
+			"/poe-oper-data/poe-module/used-power":             {Type: "decimal64", Units: "watts", Description: "Used power"},
+			"/poe-oper-data/poe-module/remaining-power":        {Type: "decimal64", Units: "watts", Description: "Remaining power"},
+			"/poe-oper-data/poe-stack/power-stack-name":        {Type: "string", Description: "Power stack name key"},
+			"/poe-oper-data/poe-switch/switch-num":             {Type: "uint32", Description: "Switch number key"},
 		},
 		Description: "PoE operational data (Cisco-IOS-XE-poe-oper)",
 	}
