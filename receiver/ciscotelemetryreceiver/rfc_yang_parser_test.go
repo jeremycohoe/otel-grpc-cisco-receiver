@@ -53,7 +53,7 @@ func TestRFC6020ParserTokenization(t *testing.T) {
 module test-module {
     // This is a single-line comment
     yang-version 1.1;
-    /* This is a 
+    /* This is a
        multi-line comment */
     namespace "urn:test:module";
     prefix "test";
@@ -136,22 +136,22 @@ module test-semantics {
     yang-version 1.1;
     namespace "urn:test:semantics";
     prefix "sem";
-    
+
     container stats {
         config false;
-        
+
         leaf byte-counter {
             type uint64;
             units "bytes";
             description "Byte counter - should be classified as counter";
         }
-        
+
         leaf packet-rate {
             type uint32;
             units "packets-per-second";
             description "Packet rate - should be classified as gauge";
         }
-        
+
         leaf cpu-percent {
             type uint8 {
                 range "0..100";
@@ -159,13 +159,13 @@ module test-semantics {
             units "percent";
             description "CPU utilization - should be classified as gauge";
         }
-        
+
         leaf error-count {
             type uint32;
             units "errors";
             description "Error count - should be classified as counter";
         }
-        
+
         leaf interface-name {
             type string;
             description "Interface name - should be info";
@@ -258,7 +258,7 @@ module test-types {
     yang-version 1.1;
     namespace "urn:test:types";
     prefix "types";
-    
+
     typedef custom-string {
         type string {
             length "1..255";
@@ -266,24 +266,24 @@ module test-types {
         }
         description "Custom string type with restrictions";
     }
-    
+
     typedef bandwidth-type {
         type uint64;
         units "bits-per-second";
         description "Bandwidth in bits per second";
     }
-    
+
     container test-data {
         leaf name {
             type custom-string;
             description "Name field using custom string type";
         }
-        
+
         leaf speed {
             type bandwidth-type;
             description "Interface speed";
         }
-        
+
         leaf utilization {
             type decimal64 {
                 fraction-digits 3;
@@ -347,7 +347,7 @@ module test-export {
     yang-version 1.1;
     namespace "urn:test:export";
     prefix "exp";
-    
+
     container test {
         leaf value {
             type uint32;
@@ -436,28 +436,28 @@ module complex-test {
     yang-version 1.1;
     namespace "urn:complex:test";
     prefix "complex";
-    
+
     typedef custom-type {
         type string {
             pattern "[A-Z][a-z0-9]*";
         }
     }
-    
+
     container system {
         list interface {
             key "name type";
-            
+
             leaf name {
                 type string;
             }
-            
+
             leaf type {
                 type custom-type;
             }
-            
+
             container statistics {
                 config false;
-                
+
                 leaf packets {
                     type uint64;
                     units "packets";

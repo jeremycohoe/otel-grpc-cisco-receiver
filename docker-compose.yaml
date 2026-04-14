@@ -35,7 +35,8 @@ services:
       GOMAXPROCS: "2"
     command: ["--config", "/etc/otel/config.yaml"]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:13133/"]
+      # distroless image has no shell/curl; rely on depends_on + restart policy
+      test: ["NONE"]
       interval: 15s
       timeout: 5s
       retries: 3

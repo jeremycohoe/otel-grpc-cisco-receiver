@@ -80,7 +80,19 @@ builder --config=builder-config.yaml
 
 The binary is written to `./build/cisco-otelcol`.
 
-### 2. Start Splunk
+### 2. Download YANG Models (Optional)
+
+For full key-value correlation on all telemetry paths (848 Cisco IOS XE modules), download the YANG models:
+
+```bash
+./scripts/fetch-yang-models.sh
+```
+
+This downloads `.yang` files from the [YangModels/yang](https://github.com/YangModels/yang) GitHub repository into `./yang-models/`. The collector parses them once at startup and caches the result to `yang-models/yang-cache.json` for instant subsequent loads.
+
+> **Note**: This step is optional. The collector includes 28 built-in Cisco IOS XE modules that cover the most common telemetry paths. The YANG models directory adds coverage for all remaining paths.
+
+### 3. Start Splunk
 
 ```bash
 ./start-splunk.sh
@@ -91,7 +103,7 @@ This starts Splunk Enterprise in Docker with:
 - **HEC endpoint**: https://\<host\>:8088 (token: `cisco-mdt-token`)
 - **cisco_mdt** metrics index auto-created
 
-### 3. Start the Collector
+### 4. Start the Collector
 
 ```bash
 ./start-otel.sh
@@ -105,7 +117,7 @@ Or run directly:
 
 The collector listens on `0.0.0.0:57500` for gRPC dial-out connections.
 
-### 4. Configure the Cisco Switch
+### 5. Configure the Cisco Switch
 
 Apply the telemetry subscriptions — replace `<COLLECTOR_IP>` with your collector host:
 
@@ -127,7 +139,7 @@ telemetry ietf subscription 109
 
 A complete set of 21 subscriptions is in [`c9300x-mdt-subscriptions.cfg`](c9300x-mdt-subscriptions.cfg). Update the receiver IP address and apply to your switch.
 
-### 5. Import the Splunk Dashboards
+### 6. Import the Splunk Dashboards
 
 ```bash
 ./scripts/import-dashboards.sh
@@ -206,6 +218,8 @@ See [docker-compose.yaml](docker-compose.yaml) and [docker-collector-config.yaml
 | `yang.enable_rfc_parser` | bool | `true` | Use RFC 6020/7950 YANG parser |
 | `yang.cache_modules` | bool | `true` | Cache parsed YANG modules |
 | `yang.max_modules` | int | `1000` | Max YANG modules to cache |
+| `yang.models_dir` | string | `""` | Path to directory of `.yang` files (downloaded via `fetch-yang-models.sh`) |
+| `yang.cache_file` | string | `"yang-cache.json"` | Cache file name inside `models_dir` |
 | `tls` | configtls.ServerConfig | *nil* | Standard OTel TLS config (nil = plaintext) |
 
 ### TLS / mTLS
